@@ -116,6 +116,20 @@ impl Drop for ColorSchemeObservation {
     }
 }
 
+/// Whether the application's interface is currently drawn light or dark,
+/// from the current trait collection.
+///
+/// Use this for the scheme a `ViewController` does not exist yet to answer —
+/// before the first scene connects, for example. Once a controller exists,
+/// prefer [`ViewController::color_scheme`], which follows its own overridden
+/// traits.
+#[must_use]
+pub fn current_scheme() -> ColorScheme {
+    // SAFETY: see the module safety note.
+    let style = unsafe { UITraitCollection::currentTraitCollection().userInterfaceStyle() };
+    scheme_for_style(style)
+}
+
 /// Dark only for an explicitly dark style; an unspecified style is drawn
 /// light, as `UIKit` draws it.
 fn scheme_for_style(style: UIUserInterfaceStyle) -> ColorScheme {

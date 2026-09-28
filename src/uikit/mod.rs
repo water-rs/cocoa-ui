@@ -37,7 +37,7 @@ mod host_view;
 mod view_controller;
 mod window;
 
-pub use appearance::ColorSchemeObservation;
+pub use appearance::{ColorSchemeObservation, current_scheme};
 pub use application::{ApplicationHandlers, WindowScene, run};
 pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
