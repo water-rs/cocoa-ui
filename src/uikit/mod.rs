@@ -34,6 +34,7 @@ mod appearance;
 mod application;
 pub mod colors;
 mod host_view;
+pub mod image;
 mod view_controller;
 mod window;
 
@@ -41,6 +42,7 @@ pub use appearance::{ColorSchemeObservation, current_scheme};
 pub use application::{ApplicationHandlers, WindowScene, run};
 pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
+pub use image::ImageView;
 pub mod label;
 pub use label::Label;
 pub use view_controller::ViewController;
