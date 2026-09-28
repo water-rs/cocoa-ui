@@ -33,12 +33,16 @@
 
 mod appearance;
 mod application;
+pub mod colors;
 mod host_view;
 mod menu;
+mod view_controller;
 mod window;
 
 pub use appearance::ColorSchemeObservation;
 pub use application::{ActivationPolicy, Application, ApplicationHandlers};
+pub use colors::AppColor;
 pub use host_view::{HitTest, HostView};
 pub use menu::{KeyModifiers, Menu, MenuAction, MenuItem};
+pub use view_controller::ViewController;
 pub use window::{Window, WindowStyle};

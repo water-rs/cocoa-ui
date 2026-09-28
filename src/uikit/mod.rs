@@ -32,12 +32,14 @@
 
 mod appearance;
 mod application;
+pub mod colors;
 mod host_view;
 mod view_controller;
 mod window;
 
 pub use appearance::ColorSchemeObservation;
 pub use application::{ApplicationHandlers, WindowScene, run};
+pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
 pub use view_controller::ViewController;
 pub use window::Window;
