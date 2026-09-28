@@ -11,3 +11,45 @@ use objc2_quartz_core::CATransaction;
 pub fn flush_transaction() {
     CATransaction::flush();
 }
+
+/// Runs `body` while a cross-fade of `duration` seconds plays on `view`'s
+/// layer: the view's new content dissolves in over the old.
+#[cfg(target_os = "macos")]
+pub fn cross_dissolve(view: &objc2_app_kit::NSView, duration: f64, body: impl FnOnce()) {
+    use objc2_foundation::ns_string;
+    use objc2_quartz_core::{CAMediaTiming, CATransition, kCATransitionFade};
+
+    view.setWantsLayer(true);
+    if let Some(layer) = view.layer() {
+        let transition = CATransition::new();
+        // SAFETY: `kCATransitionFade` is a `CATransitionType` constant Core
+        // Animation exports.
+        transition.setType(unsafe { kCATransitionFade });
+        transition.setDuration(duration);
+        layer.addAnimation_forKey(&transition, Some(ns_string!("crossDissolve")));
+    }
+    body();
+}
+
+/// Runs `body` while a cross-fade of `duration` seconds plays on `view`: the
+/// view's new content dissolves in over the old.
+#[cfg(target_os = "ios")]
+pub fn cross_dissolve(view: &objc2_ui_kit::UIView, duration: f64, body: impl FnOnce() + 'static) {
+    use objc2_ui_kit::{UIView, UIViewAnimationOptions};
+
+    // `UIView.transition` may evaluate its animations block more than once;
+    // the body still runs a single time.
+    let body = std::cell::RefCell::new(Some(body));
+    let block = block2::RcBlock::new(move || {
+        if let Some(body) = body.borrow_mut().take() {
+            body();
+        }
+    });
+    UIView::transitionWithView_duration_options_animations_completion(
+        view,
+        duration,
+        UIViewAnimationOptions::TransitionCrossDissolve,
+        Some(&block),
+        None,
+    );
+}

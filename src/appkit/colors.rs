@@ -17,6 +17,7 @@ use objc2::rc::Retained;
 use objc2_app_kit::{
     NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSColor, NSColorSpace,
 };
+use objc2_core_graphics::{CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
 
 use crate::color::Rgba;
 use crate::color_scheme::ColorScheme;
@@ -65,6 +66,38 @@ fn native(color: AppColor) -> Retained<NSColor> {
         AppColor::SystemRed => NSColor::systemRedColor(),
         AppColor::White => NSColor::whiteColor(),
     }
+}
+
+/// A color in the extended linear sRGB space: `red`, `green` and `blue` are
+/// sRGB components, `alpha` passes through clamped to `0.0…1.0`.
+///
+/// For HDR content, multiply the components by `1.0 + headroom` yourself and
+/// follow up with [`with_content_headroom`] so `AppKit` draws the extended
+/// range.
+///
+/// # Panics
+///
+/// Never in practice: extended sRGB and four components always make a color,
+/// and the `expect`s only cover a platform that does not.
+#[must_use]
+pub fn extended_linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<NSColor> {
+    let components = [red, green, blue, alpha.clamp(0.0, 1.0)];
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearSRGB }));
+    // SAFETY: `components` points at four f64s, the count extended sRGB takes.
+    let cg = unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
+        .expect("extended sRGB and four components always make a color");
+    NSColor::colorWithCGColor(&cg).expect("every extended-sRGB CGColor becomes an NSColor")
+}
+
+/// `color` reinterpreted as HDR content: components keep their values while
+/// `headroom` (a linear exposure multiplier, `1.0` and up) declares how far
+/// beyond SDR white they reach.
+///
+/// Falls back to `color` itself when its space has no extended-range form.
+#[must_use]
+pub fn with_content_headroom(color: &NSColor, headroom: f64) -> Retained<NSColor> {
+    color.colorByApplyingContentHeadroom(headroom)
 }
 
 /// What `color` draws as under `scheme`.

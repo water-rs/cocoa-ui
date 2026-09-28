@@ -58,6 +58,7 @@ mod callback;
 pub mod color;
 pub mod color_scheme;
 pub mod core_animation;
+pub mod font;
 pub mod fonts;
 pub mod geometry;
 pub mod locale;
@@ -66,11 +67,13 @@ pub mod main_queue;
 pub mod notification;
 pub mod process;
 pub mod system_font;
+pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
 
 pub use color::Rgba;
 pub use color_scheme::ColorScheme;
+pub use font::Font;
 pub use geometry::{EdgeInsets, Point, Rect, Size};
 pub use objc2::MainThreadMarker;
 pub use objc2::rc::Retained;

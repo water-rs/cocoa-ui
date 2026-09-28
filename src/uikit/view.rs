@@ -26,3 +26,27 @@ pub fn bounds(view: &UIView) -> Rect {
 pub fn set_frame(view: &UIView, frame: Rect) {
     view.setFrame(frame.into());
 }
+
+/// Reports that the view's content size changed: invalidates its intrinsic
+/// size and walks the superview chain so every ancestor re-runs layout.
+pub fn invalidate_layout_hierarchy(view: &UIView) {
+    view.invalidateIntrinsicContentSize();
+    view.setNeedsLayout();
+    let mut parent = view.superview();
+    while let Some(current) = parent {
+        current.invalidateIntrinsicContentSize();
+        current.setNeedsLayout();
+        parent = current.superview();
+    }
+}
+
+/// Whether the view lays out right-to-left for its current content and
+/// trait environment.
+#[must_use]
+pub fn is_right_to_left(view: &UIView) -> bool {
+    use objc2_ui_kit::UIUserInterfaceLayoutDirection;
+    UIView::userInterfaceLayoutDirectionForSemanticContentAttribute(
+        view.semanticContentAttribute(),
+        objc2::MainThreadMarker::from(view),
+    ) == UIUserInterfaceLayoutDirection::RightToLeft
+}

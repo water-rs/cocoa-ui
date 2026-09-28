@@ -11,6 +11,7 @@
 //! under a trait collection — documented API, on the calling thread.
 
 use objc2::rc::Retained;
+use objc2_core_graphics::{CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
 use objc2_foundation::NSString;
 use objc2_ui_kit::{UIColor, UITraitCollection, UIUserInterfaceStyle};
 
@@ -58,6 +59,38 @@ fn native(color: UiColor) -> Retained<UIColor> {
         UiColor::SystemPurple => UIColor::systemPurpleColor(),
         UiColor::SystemRed => UIColor::systemRedColor(),
     }
+}
+
+/// A color in the extended linear sRGB space, with `headroom` scaling the
+/// components beyond the standard range for HDR content.
+///
+/// `red`, `green` and `blue` are sRGB components; each is multiplied by
+/// `1.0 + headroom`. `alpha` passes through unscaled, clamped to `0.0…1.0`.
+///
+/// # Panics
+///
+/// Never in practice: extended sRGB and four components always make a color;
+/// the `expect` only covers a platform that does not.
+#[must_use]
+pub fn extended_linear(
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+    headroom: f64,
+) -> Retained<UIColor> {
+    let components = [
+        red * (1.0 + headroom),
+        green * (1.0 + headroom),
+        blue * (1.0 + headroom),
+        alpha.clamp(0.0, 1.0),
+    ];
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearSRGB }));
+    // SAFETY: `components` points at four f64s, the count extended sRGB takes.
+    let cg = unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
+        .expect("extended sRGB and four components always make a color");
+    UIColor::colorWithCGColor(&cg)
 }
 
 /// What `color` draws as under `scheme`.
