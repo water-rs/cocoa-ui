@@ -7,10 +7,11 @@
 //! main-thread only — which the `MainThreadOnly` thread kind and
 //! [`MainThreadMarker`] constructor guarantee.
 
+use std::cell::RefCell;
 use std::fmt;
 
 use objc2::rc::Retained;
-use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSObjectProtocol, NSString};
 use objc2_ui_kit::{
@@ -21,9 +22,14 @@ use objc2_ui_kit::{
 use crate::geometry::Size;
 use crate::image::ScaleMode;
 
-/// `UIImageView` keeps no ivars: `preferredSymbolConfiguration` applies to
-/// whatever image the view holds, so nothing needs re-resolving later.
-pub struct ImageViewIvars;
+/// The named system symbol an [`ImageView`] shows.
+///
+/// `preferredSymbolConfiguration` needs no re-resolution, but the name is
+/// kept anyway: chrome outside the view (a window toolbar, say) asks for it
+/// to draw the icon itself.
+pub struct ImageViewIvars {
+    symbol_name: RefCell<Option<String>>,
+}
 
 impl fmt::Debug for ImageViewIvars {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -44,13 +50,27 @@ define_class!(
 
     // SAFETY: `NSObjectProtocol` asks nothing of a `UIImageView` subclass.
     unsafe impl NSObjectProtocol for ImageView {}
+
+    impl ImageView {
+        // SAFETY: see the module safety note.
+        #[unsafe(method_id(symbolName))]
+        fn symbol_name_selector(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .symbol_name
+                .borrow()
+                .as_deref()
+                .map(NSString::from_str)
+        }
+    }
 );
 
 impl ImageView {
     /// An empty image view scaled proportionally.
     #[must_use]
     pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(ImageViewIvars);
+        let this = Self::alloc(mtm).set_ivars(ImageViewIvars {
+            symbol_name: RefCell::new(None),
+        });
         // SAFETY: `initWithFrame:` is the inherited designated initializer.
         let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] };
         this.set_scale_mode(ScaleMode::Fit);
@@ -69,6 +89,7 @@ impl ImageView {
 
     /// The image the view draws; `None` clears it.
     pub fn set_image(&self, image: Option<&UIImage>) {
+        self.ivars().symbol_name.replace(None);
         self.setImage(image);
         self.invalidate_layout();
     }
@@ -81,6 +102,7 @@ impl ImageView {
         let symbol = NSString::from_str(name);
         let image = UIImage::systemImageNamed(&symbol);
         image.is_some_and(|image| {
+            self.ivars().symbol_name.replace(Some(name.to_owned()));
             self.setImage(Some(&image));
             self.invalidate_layout();
             true

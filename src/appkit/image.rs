@@ -52,6 +52,18 @@ define_class!(
 
     // SAFETY: `NSObjectProtocol` asks nothing of an `NSImageView` subclass.
     unsafe impl NSObjectProtocol for ImageView {}
+
+    impl ImageView {
+        // SAFETY: see the module safety note.
+        #[unsafe(method_id(symbolName))]
+        fn symbol_name_selector(&self) -> Option<Retained<NSString>> {
+            self.ivars()
+                .symbol_name
+                .borrow()
+                .as_deref()
+                .map(NSString::from_str)
+        }
+    }
 );
 
 impl ImageView {
