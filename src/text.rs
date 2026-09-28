@@ -232,20 +232,20 @@ fn layout(
     layout_manager
 }
 
-/// The glyph indexes at which each laid-out line begins: a glyph's effective
+/// The glyph index at which each laid-out line begins: a glyph's effective
 /// range starts where its line fragment starts.
 fn line_starts(layout_manager: &NSLayoutManager, glyph_count: usize) -> Vec<usize> {
     let mut starts = Vec::new();
     let mut effective_range = NSRange::new(0, 0);
-    for glyph in 0..glyph_count {
+    let mut glyph = 0;
+    while glyph < glyph_count {
         // SAFETY: `effective_range` is stack storage the call writes into.
         unsafe {
             layout_manager
                 .lineFragmentRectForGlyphAtIndex_effectiveRange(glyph, &raw mut effective_range);
         }
-        if starts.last() != Some(&effective_range.location) {
-            starts.push(effective_range.location);
-        }
+        starts.push(effective_range.location);
+        glyph = effective_range.location + effective_range.length;
     }
     starts
 }
@@ -292,58 +292,50 @@ pub fn measure(
     }
 
     let starts = line_starts(&layout_manager, glyph_count);
-    if line_limit > 0 && starts.len() > line_limit {
-        // Clip at the start of the first line beyond the limit.
-        let end_glyph = starts[line_limit];
+    // A line limit caps the measurement at the last visible line: the
+    // platform label truncates that line with an ellipsis, so the hidden
+    // remainder must not reserve height.
+    let (measured, last_baseline_glyph) = if line_limit > 0 && starts.len() > line_limit {
+        let last_line_start = starts[line_limit - 1];
+        let mut last_line_range = NSRange::new(last_line_start, 0);
+        // SAFETY: `last_line_range` is stack storage the call writes into.
+        unsafe {
+            layout_manager.lineFragmentRectForGlyphAtIndex_effectiveRange(
+                last_line_start,
+                &raw mut last_line_range,
+            );
+        }
         // SAFETY: a null actual-range pointer skips the out parameter.
-        let end_char = unsafe {
+        let char_range = unsafe {
             layout_manager.characterRangeForGlyphRange_actualGlyphRange(
-                NSRange::new(end_glyph, 0),
+                NSRange::new(0, last_line_range.location + last_line_range.length),
                 std::ptr::null_mut(),
             )
-        }
-        .location;
-        let measured = attributed.attributedSubstringFromRange(NSRange::new(0, end_char));
-        let layout_manager = layout(mtm, &measured, width);
-        let glyph_count = layout_manager.numberOfGlyphs();
-        if glyph_count == 0 {
-            return TextMetrics {
-                size: Size::ZERO,
-                first_baseline: None,
-                last_baseline: None,
-            };
-        }
-        let starts = line_starts(&layout_manager, glyph_count);
-        return report(&layout_manager, &measured, glyph_count, &starts, scale);
-    }
-    report(&layout_manager, attributed, glyph_count, &starts, scale)
-}
+        };
+        (
+            attributed.attributedSubstringFromRange(char_range),
+            last_line_range.location,
+        )
+    } else {
+        (Retained::from(attributed), glyph_count - 1)
+    };
 
-/// The measured extents of the text `layout_manager` laid out: snapped bounds
-/// and first/last baselines.
-fn report(
-    layout_manager: &NSLayoutManager,
-    measured: &NSAttributedString,
-    glyph_count: usize,
-    starts: &[usize],
-    scale: f64,
-) -> TextMetrics {
-    let container = layout_manager
-        .textContainers()
-        .firstObject()
-        .expect("measurement stack has a text container");
-    let bounds = layout_manager
-        .boundingRectForGlyphRange_inTextContainer(NSRange::new(0, glyph_count), &container);
+    // `boundingRect` with `UsesLineFragmentOrigin` applies the platform's
+    // default leading — identical to what NSTextField/UILabel report for the
+    // same attributed string.
+    let bounds = measured.boundingRectWithSize_options_context(
+        CGSize::new(width, f64::MAX),
+        NSStringDrawingOptions::UsesLineFragmentOrigin,
+        None,
+    );
     let ceil_to_scale = |v: f64| (v * scale).ceil() / scale;
-    let last_start = starts.last().copied().unwrap_or(0);
-    let _ = measured;
     TextMetrics {
         size: Size::new(
             ceil_to_scale(bounds.size.width),
             ceil_to_scale(bounds.size.height),
         ),
-        first_baseline: Some(baseline_of(layout_manager, 0)),
-        last_baseline: Some(baseline_of(layout_manager, last_start)),
+        first_baseline: Some(baseline_of(&layout_manager, 0)),
+        last_baseline: Some(baseline_of(&layout_manager, last_baseline_glyph)),
     }
 }
 
