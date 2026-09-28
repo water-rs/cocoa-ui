@@ -149,6 +149,12 @@ impl Application {
         self.app.setWindowsMenu(Some(menu.native()));
     }
 
+    /// Terminates the application: the equivalent of Quit — the delegate's
+    /// `will_terminate` runs and the process exits.
+    pub fn terminate(&self) {
+        self.app.terminate(None);
+    }
+
     /// Runs the application's event loop, calling `handlers` as its events
     /// occur, until the application stops.
     ///

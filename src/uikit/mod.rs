@@ -43,6 +43,5 @@ pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
 pub mod label;
 pub use label::Label;
-pub mod view;
 pub use view_controller::ViewController;
 pub use window::Window;

@@ -46,6 +46,5 @@ pub use host_view::{HitTest, HostView};
 pub mod label;
 pub use label::Label;
 pub use menu::{KeyModifiers, Menu, MenuAction, MenuItem};
-pub mod view;
 pub use view_controller::ViewController;
 pub use window::{Window, WindowStyle};

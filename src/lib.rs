@@ -51,6 +51,7 @@
 
 #![cfg(any(target_os = "macos", target_os = "ios"))]
 
+pub mod action;
 #[cfg(target_os = "macos")]
 pub mod appkit;
 pub mod bundle;
@@ -70,7 +71,31 @@ pub mod system_font;
 pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
+pub mod view;
 
+/// The platform's base view class: `NSView` on macOS, `UIView` on iOS.
+///
+/// The two frameworks are never compiled together, so an alias rather than
+/// a trait: code written against `PlatformView` has no `#[cfg]`.
+#[cfg(target_os = "macos")]
+pub type PlatformView = objc2_app_kit::NSView;
+/// The platform's base view class: `NSView` on macOS, `UIView` on iOS.
+///
+/// The two frameworks are never compiled together, so an alias rather than
+/// a trait: code written against `PlatformView` has no `#[cfg]`.
+#[cfg(target_os = "ios")]
+pub type PlatformView = objc2_ui_kit::UIView;
+
+/// The framework crate whose types appear in this crate's signatures, so a
+/// consumer never pins it separately.
+#[cfg(target_os = "macos")]
+pub use objc2_app_kit;
+/// The framework crate whose types appear in this crate's signatures, so a
+/// consumer never pins it separately.
+#[cfg(target_os = "ios")]
+pub use objc2_ui_kit;
+
+pub use action::ActionTarget;
 pub use color::Rgba;
 pub use color_scheme::ColorScheme;
 pub use font::Font;

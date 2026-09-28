@@ -177,6 +177,6 @@ impl Label {
     /// superview chain so every ancestor re-runs layout.
     fn invalidate_layout(&self) {
         self.invalidateIntrinsicContentSize();
-        crate::uikit::view::invalidate_layout_hierarchy(self);
+        crate::view::invalidate_layout(self);
     }
 }
