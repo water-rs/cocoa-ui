@@ -121,14 +121,11 @@ impl Application {
 
     /// Sets how the application presents itself.
     ///
-    /// # Panics
-    ///
-    /// If `AppKit` refuses the policy.
-    pub fn set_activation_policy(&self, policy: ActivationPolicy) {
-        assert!(
-            self.app.setActivationPolicy(policy.native()),
-            "AppKit refused the activation policy {policy:?}"
-        );
+    /// Returns whether `AppKit` accepted the change. The system can refuse
+    /// during early startup even for a well-formed app, so callers treat it
+    /// as best-effort — the bundle's `Info.plist` policy still applies.
+    pub fn set_activation_policy(&self, policy: ActivationPolicy) -> bool {
+        self.app.setActivationPolicy(policy.native())
     }
 
     /// Makes `menu` the menu bar: each of its items is one top-level menu,
