@@ -69,6 +69,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 objc2-quartz-core = { version = "0.3", default-features = false, features = [
     "std",
     "CATransaction",
+    "CAMediaTimingFunction",
 ] }
 # `os_log` is a family of C macros; this crate compiles the one-line wrapper
 # that forwards a preformatted `%{public}s` message through them.
@@ -96,8 +97,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSRunningApplication",
     "NSScreen",
     "NSView",
+    "NSAnimation",
+    "NSAnimationContext",
     "NSViewController",
     "NSWindow",
+    "objc2-quartz-core",
 ] }
 
 [target.'cfg(target_os = "ios")'.dependencies]

@@ -11,13 +11,19 @@
 
 use std::cell::RefCell;
 use std::fmt;
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use bitflags::bitflags;
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSBackingStoreType, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask};
+use objc2_app_kit::{
+    NSAnimatablePropertyContainer, NSAnimationContext, NSAppearance, NSAppearanceCustomization,
+    NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBackingStoreType, NSView, NSWindow,
+    NSWindowDelegate, NSWindowStyleMask,
+};
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString};
 
 use crate::appkit::view_controller::ViewController;
@@ -93,6 +99,58 @@ impl Window {
         let delegate = Delegate::new(mtm);
         window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         Self { window, delegate }
+    }
+
+    /// The underlying `NSWindow`, for callers crossing into platform APIs the
+    /// kit does not wrap.
+    #[must_use]
+    pub fn native(&self) -> &NSWindow {
+        &self.window
+    }
+
+    /// The content rect of a window whose frame would be `frame` in `style` —
+    /// `NSWindow.contentRect(forFrameRect:styleMask:)` — used to size a window
+    /// created from a declared window frame.
+    #[must_use]
+    pub fn content_rect_for_frame(mtm: MainThreadMarker, frame: Rect, style: WindowStyle) -> Rect {
+        NSWindow::contentRectForFrameRect_styleMask(frame.into(), style.native(), mtm).into()
+    }
+
+    /// Reveals the window's contents: fades `alphaValue` to opaque over
+    /// `duration` seconds with ease-out timing, the way a fresh window first
+    /// appears.
+    pub fn fade_in(&self, duration: f64) {
+        let window = self.window.clone();
+        let changes = RcBlock::new(move |context: NonNull<NSAnimationContext>| {
+            // SAFETY: AppKit hands the block a live `NSAnimationContext`.
+            let context = unsafe { context.as_ref() };
+            context.setDuration(duration);
+            // SAFETY: see the module safety note.
+            unsafe {
+                context.setTimingFunction(Some(
+                    &objc2_quartz_core::CAMediaTimingFunction::functionWithName(
+                        objc2_quartz_core::kCAMediaTimingFunctionEaseOut,
+                    ),
+                ));
+                window.animator().setAlphaValue(1.0);
+            }
+        });
+        NSAnimationContext::runAnimationGroup(&changes);
+    }
+
+    /// Pins the window's appearance to `scheme`, or hands appearance back to
+    /// the system when `scheme` is `None`.
+    pub fn set_appearance(&self, scheme: Option<crate::ColorScheme>) {
+        // SAFETY: the name statics are AppKit constants; see the module
+        // safety note.
+        let name = unsafe {
+            scheme.map(|scheme| match scheme {
+                crate::ColorScheme::Light => NSAppearanceNameAqua,
+                crate::ColorScheme::Dark => NSAppearanceNameDarkAqua,
+            })
+        };
+        self.window
+            .setAppearance(name.and_then(NSAppearance::appearanceNamed).as_deref());
     }
 
     /// Sets the text of the title bar.
