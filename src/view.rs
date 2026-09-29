@@ -69,40 +69,6 @@ pub fn has_window(view: &PlatformView) -> bool {
     view.window().is_some()
 }
 
-/// `view`'s bounds in its window's coordinate space.
-///
-/// On macOS the result keeps `AppKit`'s bottom-left origin; a top-left
-/// consumer mirrors it against the content area's height.
-#[must_use]
-pub fn bounds_in_window(view: &PlatformView) -> Rect {
-    view.convertRect_toView(view.bounds(), None).into()
-}
-
-/// Lets `view` resize with its superview on both axes.
-///
-/// The autoresizing mask `UIViewAutoresizing.flexibleWidth |
-/// .flexibleHeight`, the same flag pair `NSView` spells `ViewWidthSizable |
-/// ViewHeightSizable`.
-pub fn set_autoresizing_flexible_size(view: &PlatformView) {
-    #[cfg(target_os = "macos")]
-    view.setAutoresizingMask(
-        objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
-            | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
-    );
-    #[cfg(target_os = "ios")]
-    view.setAutoresizingMask(
-        objc2_ui_kit::UIViewAutoresizing::FlexibleWidth
-            | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight,
-    );
-}
-
-/// Whether `view` posts `NSViewFrameDidChangeNotification` on every frame
-/// change — off by default, so a caller watching the notification opts in.
-#[cfg(target_os = "macos")]
-pub fn set_posts_frame_changed(view: &PlatformView, enabled: bool) {
-    view.setPostsFrameChangedNotifications(enabled);
-}
-
 /// Tells `view` and every ancestor that its size may have changed.
 ///
 /// Invalidates intrinsic content size and marks each for layout. Call from a
@@ -187,73 +153,6 @@ pub fn set_alpha(view: &PlatformView, alpha: f64) {
     view.setAlpha(alpha);
 }
 
-/// The live subviews of `view`, in back-to-front order.
-#[must_use]
-pub fn subviews(view: &PlatformView) -> Vec<Retained<PlatformView>> {
-    view.subviews().to_vec()
-}
-
-/// The window `view` is attached to, if any.
-#[must_use]
-#[cfg(target_os = "macos")]
-pub fn window(view: &PlatformView) -> Option<Retained<objc2_app_kit::NSWindow>> {
-    view.window()
-}
-
-/// The window `view` is attached to, if any.
-#[must_use]
-#[cfg(target_os = "ios")]
-pub fn window(view: &PlatformView) -> Option<Retained<objc2_ui_kit::UIWindow>> {
-    view.window()
-}
-
-/// Marks `view` with a stable accessibility identifier, the string a test or
-/// an internal contract can find the view by. Pass `None` to clear it.
-pub fn set_accessibility_identifier(view: &PlatformView, identifier: Option<&str>) {
-    let identifier = identifier.map(objc2_foundation::NSString::from_str);
-    #[cfg(target_os = "macos")]
-    {
-        use objc2_app_kit::NSAccessibility;
-        view.setAccessibilityIdentifier(identifier.as_deref());
-    }
-    #[cfg(target_os = "ios")]
-    {
-        use objc2_ui_kit::UIAccessibilityIdentification;
-        view.setAccessibilityIdentifier(identifier.as_deref());
-    }
-}
-
-/// The accessibility identifier set on `view`, if any.
-#[must_use]
-pub fn accessibility_identifier(view: &PlatformView) -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        use objc2_app_kit::NSAccessibility;
-        view.accessibilityIdentifier().map(|s| s.to_string())
-    }
-    #[cfg(target_os = "ios")]
-    {
-        use objc2_ui_kit::UIAccessibilityIdentification;
-        view.accessibilityIdentifier()
-            .map(|identifier| identifier.to_string())
-    }
-}
-
-/// The tag (`UIView.tag`) used to marker-test a view without retaining a
-/// subclass reference. `NSView` has no tag of its own; identity checks there
-/// use the accessibility identifier.
-#[must_use]
-#[cfg(target_os = "ios")]
-pub fn tag(view: &PlatformView) -> isize {
-    view.tag()
-}
-
-/// Sets `view`'s tag; see [`tag`].
-#[cfg(target_os = "ios")]
-pub fn set_tag(view: &PlatformView, tag: isize) {
-    view.setTag(tag);
-}
-
 /// Declares `view` an accessibility element and gives it `label` (and, on
 /// `AppKit`, a tooltip of the same text). Pass text already stripped of
 /// bidirectional controls.
@@ -282,9 +181,10 @@ pub fn set_clips_to_bounds(view: &PlatformView, clips: bool) {
     view.setClipsToBounds(clips);
 }
 
-/// The primary content view `view` exposes through `cocoaUiPrimaryContent`,
-/// if it answers that selector — the child a kit host view surfaces for
-/// chrome like list cells and scroll surfaces; `None` otherwise.
+/// The primary content `view` exposes through `cocoaUiPrimaryContent`.
+///
+/// The child a kit host view surfaces for chrome like list cells and scroll
+/// surfaces; `None` when `view` does not answer the selector.
 #[must_use]
 pub fn primary_content(view: &PlatformView) -> Option<Retained<PlatformView>> {
     if view.respondsToSelector(objc2::sel!(cocoaUiPrimaryContent)) {
@@ -300,13 +200,6 @@ pub fn primary_content(view: &PlatformView) -> Option<Retained<PlatformView>> {
 /// constraints — `true` for views a layout container positions manually.
 pub fn set_translates_autoresizing(view: &PlatformView, enabled: bool) {
     view.setTranslatesAutoresizingMaskIntoConstraints(enabled);
-}
-
-/// Whether `view` receives touch events itself. `false` on a view laid over
-/// an interactive control lets touches fall through to the control.
-#[cfg(target_os = "ios")]
-pub fn set_user_interaction_enabled(view: &PlatformView, enabled: bool) {
-    view.setUserInteractionEnabled(enabled);
 }
 
 /// Makes `parent`'s subviews exactly `ordered`, in that z-order, reusing the
