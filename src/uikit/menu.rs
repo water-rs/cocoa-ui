@@ -33,11 +33,23 @@ use crate::uikit::button::{Button, Chrome};
 /// A `UIMenu` from a menu tree.
 #[must_use]
 pub fn menu(mtm: MainThreadMarker, title: &Command, nodes: &[MenuTreeNode]) -> Retained<UIMenu> {
+    menu_with_identifier(mtm, title, None, nodes)
+}
+
+/// A `UIMenu` from a menu tree, named `identifier` for `UIMenuBuilder`
+/// lookups — the application menu bar relies on that stability.
+#[must_use]
+pub fn menu_with_identifier(
+    mtm: MainThreadMarker,
+    title: &Command,
+    identifier: Option<&str>,
+    nodes: &[MenuTreeNode],
+) -> Retained<UIMenu> {
     let image = menu_image(title.symbol.as_deref());
     UIMenu::menuWithTitle_image_identifier_options_children(
         &NSString::from_str(&title.label),
         image.as_deref(),
-        None,
+        identifier.map(NSString::from_str).as_deref(),
         UIMenuOptions::empty(),
         &objc2_foundation::NSArray::from_slice(
             &elements(mtm, nodes)

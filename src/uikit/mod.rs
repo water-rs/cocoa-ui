@@ -61,7 +61,9 @@ mod view_controller;
 mod window;
 
 pub use appearance::{ColorSchemeObservation, current_scheme};
-pub use application::{ApplicationHandlers, WindowScene, run};
+pub use application::{
+    ApplicationHandlers, MenuBuilder, WindowScene, request_main_menu_rebuild, run,
+};
 pub use badge::BadgeView;
 pub use button::Button;
 pub use calendar_view::CalendarView;
@@ -86,7 +88,7 @@ pub use progress::Progress;
 mod scroll;
 pub use scroll::ScrollView;
 mod stepper;
-pub use menu::{elements, menu};
+pub use menu::{elements, menu, menu_with_identifier};
 pub use navigation::{
     BarButton, LargeTitle, NavBar, NavContentController, NavPage, NavSearch, NavigationController,
     SearchUpdater, bar_item, bar_item_accessibility_label, first_control,

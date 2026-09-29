@@ -494,6 +494,12 @@ impl Menu {
     /// Replaces the menu's contents with `nodes`.
     pub fn set_nodes(&self, nodes: &[MenuTreeNode]) {
         self.menu.removeAllItems();
+        self.append_nodes(nodes);
+    }
+
+    /// Appends `nodes` after the menu's existing contents — the menu bar
+    /// grows this way, its standard menus already in place.
+    pub fn append_nodes(&self, nodes: &[MenuTreeNode]) {
         let mtm = self.menu.mtm();
         for node in nodes {
             match node {
