@@ -190,7 +190,9 @@ impl Label {
         let scale = self.display_scale().max(1.0);
         let inset = self
             .cell()
-            .map_or(0.0, |cell| cell.cellSize().width - self.intrinsicContentSize().width)
+            .map_or(0.0, |cell| {
+                cell.cellSize().width - self.intrinsicContentSize().width
+            })
             .max(0.0);
         metrics.size.width = ((metrics.size.width + inset) * scale).ceil() / scale;
         metrics
