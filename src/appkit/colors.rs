@@ -90,6 +90,14 @@ pub fn extended_linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<
     NSColor::colorWithCGColor(&cg).expect("every extended-sRGB CGColor becomes an NSColor")
 }
 
+/// The dynamic color placeholder text draws in — the same color
+/// `NSTextField` uses for its placeholder, tracking the effective
+/// appearance.
+#[must_use]
+pub fn placeholder_text() -> Retained<NSColor> {
+    NSColor::placeholderTextColor()
+}
+
 /// `color` reinterpreted as HDR content: components keep their values while
 /// `headroom` (a linear exposure multiplier, `1.0` and up) declares how far
 /// beyond SDR white they reach.

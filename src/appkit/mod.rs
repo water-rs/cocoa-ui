@@ -53,5 +53,7 @@ pub use label::Label;
 mod slider;
 pub use menu::{KeyModifiers, Menu, MenuAction, MenuItem};
 pub use slider::Slider;
+pub mod text_field;
+pub use text_field::TextField;
 pub use view_controller::ViewController;
 pub use window::{Window, WindowStyle};

@@ -53,6 +53,8 @@ impl ControlEvents {
     pub const PRIMARY_ACTION_TRIGGERED: Self = Self(1 << 13);
     /// A text field's contents changed while editing.
     pub const EDITING_CHANGED: Self = Self(1 << 17);
+    /// Editing ended because the field's Return key was pressed.
+    pub const EDITING_DID_END_ON_EXIT: Self = Self(1 << 19);
     /// Every event.
     pub const ALL: Self = Self(0x00FF_FFFF);
 }

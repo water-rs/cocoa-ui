@@ -93,6 +93,14 @@ pub fn extended_linear(
     UIColor::colorWithCGColor(&cg)
 }
 
+/// The dynamic color placeholder text draws in — the same color
+/// `UITextField` uses for its placeholder, tracking the resolved interface
+/// style.
+#[must_use]
+pub fn placeholder_text() -> Retained<UIColor> {
+    UIColor::placeholderTextColor()
+}
+
 /// What `color` draws as under `scheme`.
 #[must_use]
 pub fn resolve(color: UiColor, scheme: ColorScheme) -> Rgba {
