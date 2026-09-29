@@ -128,7 +128,7 @@ pub fn scale_to_pixels(context: &CGContext, scale: f64) {
 }
 
 /// Pushes `context`'s flipped layer-render transform — `UIKit`'s layer tree
-/// renders top-down into a bottom-up `CG` coordinate space.
+/// renders top-down into a bottom-up CG coordinate space.
 #[cfg(target_os = "ios")]
 pub fn begin_layer_flip(context: &CGContext, height: f64) {
     CGContext::save_g_state(Some(context));
@@ -152,8 +152,7 @@ pub fn fill(context: &CGContext, color: &objc2_core_graphics::CGColor, rect: Rec
 /// render, then pops it.
 #[cfg(target_os = "ios")]
 pub fn with_uikit_context(context: &CGContext, body: impl FnOnce()) {
-    // SAFETY: balances the `UIGraphicsPopContext` below on the same thread,
-    // the documented pairing for the UIKit context stack.
+    // SAFETY: pushes/pops are balanced around `body`.
     unsafe { objc2_ui_kit::UIGraphicsPushContext(context) };
     body();
     // SAFETY: pops the context pushed above.
@@ -192,6 +191,9 @@ pub fn template_image(image: &CGImage, size: Size) -> Retained<objc2_app_kit::NS
 /// window-dependent rendering paths.
 #[cfg(target_os = "macos")]
 #[must_use]
+/// # Panics
+///
+/// On a failure to allocate the window.
 pub fn make_offscreen_window(
     mtm: objc2::MainThreadMarker,
     size: Size,
@@ -218,13 +220,17 @@ pub fn make_offscreen_window(
 /// capture windows never sit under a device notch.
 #[cfg(target_os = "ios")]
 #[must_use]
+/// # Panics
+///
+/// On a failure to allocate the window.
 pub fn make_offscreen_window(
     mtm: objc2::MainThreadMarker,
     scene: &objc2_ui_kit::UIWindowScene,
     size: Size,
 ) -> Retained<CaptureWindow> {
-    // SAFETY: `initWithWindowScene:` is a designated initializer.
     let window: Retained<CaptureWindow> =
+        // SAFETY: `initWithWindowScene:` is `UIWindow`'s designated
+        // initializer for scene-based windows.
         unsafe { objc2::msg_send![CaptureWindow::alloc(mtm), initWithWindowScene: scene] };
     window.setFrame(Rect::new(-10_000.0, -10_000.0, size.width, size.height).into());
     window
@@ -248,7 +254,12 @@ objc2::define_class!(
         /// Zero insets — the window is never on a device.
         #[unsafe(method(safeAreaInsets))]
         fn safe_area_insets(&self) -> objc2_ui_kit::UIEdgeInsets {
-            objc2_ui_kit::UIEdgeInsets { top: 0.0, left: 0.0, bottom: 0.0, right: 0.0 }
+            objc2_ui_kit::UIEdgeInsets {
+                top: 0.0,
+                left: 0.0,
+                bottom: 0.0,
+                right: 0.0,
+            }
         }
     }
 );
@@ -280,4 +291,51 @@ pub fn show_capture_window(window: &objc2_app_kit::NSWindow) {
 #[cfg(target_os = "macos")]
 pub fn close_capture_window(window: &objc2_app_kit::NSWindow) {
     window.orderOut(None);
+}
+
+/// Mounts `view` in `window` through a plain `UIViewController`, unhides the
+/// window and lays everything out — the `UIKit` analogue of
+/// `orderFrontRegardless`.
+#[cfg(target_os = "ios")]
+/// # Panics
+///
+/// On a failure to confirm the main thread.
+pub fn show_capture_window(window: &CaptureWindow, view: &crate::PlatformView, size: Size) {
+    let mtm = objc2::MainThreadMarker::new().expect("main thread");
+    let controller = objc2_ui_kit::UIViewController::new(mtm);
+    window.setRootViewController(Some(&controller));
+    if let Some(content) = controller.view() {
+        content.setFrame(Rect::new(0.0, 0.0, size.width, size.height).into());
+        crate::view::add_subview(&content, view);
+    }
+    window.setHidden(false);
+    window.layoutIfNeeded();
+    view.layoutIfNeeded();
+}
+
+/// Hides a `UIKit` capture window after the bitmap lands.
+#[cfg(target_os = "ios")]
+pub fn close_capture_window(window: &CaptureWindow) {
+    window.setHidden(true);
+}
+
+/// Any connected `UIWindowScene` — `WuiCaptureDisplay`'s `requireCaptureDisplay`:
+/// capture windows must attach to a real scene, and any connected one works.
+#[cfg(target_os = "ios")]
+#[must_use]
+/// # Panics
+///
+/// On a failure to enumerate the application's connected scenes.
+pub fn any_window_scene() -> Option<Retained<objc2_ui_kit::UIWindowScene>> {
+    use objc2_ui_kit::UIApplication;
+    let mtm = objc2::MainThreadMarker::new().expect("main thread");
+    let application = UIApplication::sharedApplication(mtm);
+    let scenes = application.connectedScenes();
+    let iterator = scenes.iter();
+    for scene in iterator {
+        if let Ok(window_scene) = scene.downcast::<objc2_ui_kit::UIWindowScene>() {
+            return Some(window_scene);
+        }
+    }
+    None
 }

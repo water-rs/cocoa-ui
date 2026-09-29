@@ -30,6 +30,7 @@ use objc2_app_kit::{
 use objc2_foundation::NSRect;
 use objc2_quartz_core::CALayer;
 
+use crate::PlatformView;
 use crate::callback::guarded;
 use crate::input::{EventPhase, GesturePhase, PointerInteraction};
 
@@ -396,6 +397,46 @@ impl SurfaceView {
             .borrow()
             .clone()
             .expect("presentation layer is created in `new`")
+    }
+
+    /// The view's bounds size in logical units.
+    #[must_use]
+    pub fn bounds_size(&self) -> crate::geometry::Size {
+        crate::view::bounds(self).size
+    }
+
+    /// The window's backing scale — physical pixels per logical unit —
+    /// `None` while the view is off-window.
+    #[must_use]
+    pub fn backing_scale(&self) -> Option<f64> {
+        crate::view::window(self).map(|window| window.backingScaleFactor())
+    }
+
+    /// Whether the view can present: on a visible window that is not
+    /// occluded, and not hidden inside the hierarchy.
+    #[must_use]
+    pub fn is_visible(&self) -> bool {
+        if self.isHiddenOrHasHiddenAncestor() {
+            return false;
+        }
+        crate::view::window(self).is_some_and(|window| {
+            window.isVisible()
+                && window
+                    .occlusionState()
+                    .contains(objc2_app_kit::NSWindowOcclusionState::Visible)
+        })
+    }
+
+    /// The view's bounds in `to`'s coordinate space.
+    #[must_use]
+    pub fn bounds_in(&self, to: &PlatformView) -> crate::geometry::Rect {
+        crate::view::convert_rect(self, crate::view::bounds(self), Some(to))
+    }
+
+    /// The view as its platform view.
+    #[must_use]
+    pub fn as_platform_view(&self) -> &PlatformView {
+        self
     }
 
     /// Calls `handler` after every layout pass.

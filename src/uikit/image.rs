@@ -138,6 +138,32 @@ impl ImageView {
 
     /// Names the view to a screen reader; `None` leaves it unnamed. Setting a
     /// label marks the view an accessibility element.
+    /// The window screen's scale — `None` while the view is off-window.
+    #[must_use]
+    pub fn backing_scale(&self) -> Option<f64> {
+        crate::view::window(self).map(|window| window.screen().scale())
+    }
+
+    /// The view's `accessibilityValue`.
+    pub fn set_accessibility_value(&self, value: Option<&str>) {
+        self.setAccessibilityValue(
+            value.map(NSString::from_str).as_deref(),
+            MainThreadMarker::from(self),
+        );
+    }
+
+    /// `isAccessibilityElement(true)` + the image accessibility trait.
+    pub fn set_image_trait(&self) {
+        self.setIsAccessibilityElement(true, MainThreadMarker::from(self));
+        let mtm = MainThreadMarker::from(self);
+        self.setAccessibilityTraits(
+            // SAFETY: `UIAccessibilityTraitImage` is a `UIKit` extern static.
+            self.accessibilityTraits(mtm) | unsafe { objc2_ui_kit::UIAccessibilityTraitImage },
+            mtm,
+        );
+    }
+
+    /// Marks the image as an accessibility image carrying `label`.
     pub fn set_accessibility_label(&self, label: Option<&str>) {
         let mtm = MainThreadMarker::from(self);
         self.setIsAccessibilityElement(label.is_some(), mtm);

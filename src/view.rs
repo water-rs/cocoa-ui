@@ -319,6 +319,15 @@ pub fn fitting_size(view: &PlatformView) -> crate::geometry::Size {
     view.fittingSize().into()
 }
 
+/// The size `view` compresses to under Auto Layout — `UIKit`'s analogue
+/// of `AppKit`'s `fittingSize`.
+#[must_use]
+#[cfg(target_os = "ios")]
+pub fn fitting_size(view: &PlatformView) -> crate::geometry::Size {
+    view.systemLayoutSizeFittingSize(objc2_core_foundation::CGSize::new(0.0, 0.0))
+        .into()
+}
+
 /// The size `view` prefers for `proposed` points.
 #[must_use]
 #[cfg(target_os = "ios")]
@@ -339,8 +348,10 @@ pub fn layout_immediately(view: &PlatformView) {
 /// Marks `view` and its subtree as needing display, then draws it.
 #[cfg(target_os = "ios")]
 pub fn display_immediately(view: &PlatformView) {
+    use objc2::msg_send;
     view.setNeedsDisplay();
-    view.layer().displayIfNeeded();
+    // SAFETY: `displayIfNeeded` is a `UIView` no-argument method.
+    let _: () = unsafe { msg_send![view, displayIfNeeded] };
 }
 
 /// Performs any pending layout on `view`'s layer tree.
@@ -591,7 +602,6 @@ pub fn reconcile_subviews(parent: &PlatformView, ordered: &[Retained<PlatformVie
         parent.insertSubview_atIndex(child, index as isize);
     }
 }
-
 /// Pins `child`'s leading, trailing, top, and bottom edges to `parent`'s
 /// with four equal-to-anchor constraints.
 ///
@@ -626,4 +636,51 @@ pub fn pin_edges(
     NSLayoutConstraint::activateConstraints(&constraints);
     #[cfg(target_os = "ios")]
     NSLayoutConstraint::activateConstraints(&constraints, mtm);
+}
+
+/// Applies the content-declared label and value — `WuiGpuSurface`'s
+/// `publishContentAccessibility`: the label channel controls whether the
+/// view is an accessibility element; a value only ever marks it.
+#[cfg(target_os = "macos")]
+pub fn set_accessibility_content(view: &PlatformView, label: Option<&str>, value: Option<&str>) {
+    use objc2_app_kit::NSAccessibility;
+    use objc2_foundation::NSString;
+    view.setAccessibilityElement(label.is_some() || value.is_some());
+    view.setAccessibilityLabel(label.map(NSString::from_str).as_deref());
+    // SAFETY: the setter is a plain property accessor on the main thread.
+    let value = value.map(NSString::from_str);
+    // SAFETY: the setter is a plain property accessor on the main thread; the
+    // pointer is a live `NSString` while the call runs.
+    unsafe {
+        view.setAccessibilityValue(
+            value
+                .as_deref()
+                .map(|value| &*std::ptr::from_ref(value).cast::<objc2::runtime::AnyObject>()),
+        );
+    };
+}
+
+/// Applies the content-declared label and value.
+///
+/// `WuiGpuSurface`'s `publishContentAccessibility`: the label channel
+/// controls whether the view is an accessibility element; a value only ever
+/// marks it.
+///
+/// # Panics
+///
+/// If not called on the main thread.
+#[cfg(target_os = "ios")]
+pub fn set_accessibility_content(view: &PlatformView, label: Option<&str>, value: Option<&str>) {
+    use objc2_foundation::NSString;
+    use objc2_ui_kit::NSObjectUIAccessibility;
+    let mtm = objc2::MainThreadMarker::new().expect("main thread");
+    view.setAccessibilityLabel(label.map(NSString::from_str).as_deref(), mtm);
+    let value = value.map(NSString::from_str);
+    view.setAccessibilityValue(
+        value.as_deref(),
+        objc2::MainThreadMarker::new().expect("main thread"),
+    );
+    if label.is_some() || value.is_some() {
+        view.setIsAccessibilityElement(true, mtm);
+    }
 }

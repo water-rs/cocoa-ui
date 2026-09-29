@@ -34,3 +34,34 @@ impl Rgba {
         Self { alpha, ..self }
     }
 }
+
+/// A `CGColor` in the extended linear sRGB space, `headroom` scaling the
+/// color channels by `1.0 + headroom` — the `ResolvedColor` conversion both
+/// platforms share.
+///
+/// # Panics
+///
+/// When `headroom` is NaN — the channel scale becomes NaN and the color
+/// creation traps in Core Graphics.
+#[must_use]
+pub fn cg_extended_linear(
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+    headroom: f64,
+) -> objc2_core_foundation::CFRetained<objc2_core_graphics::CGColor> {
+    use objc2_core_graphics::{CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
+    let scale = 1.0 + headroom;
+    let components = [
+        red * scale,
+        green * scale,
+        blue * scale,
+        alpha.clamp(0.0, 1.0),
+    ];
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearSRGB }));
+    // SAFETY: `components` points at four f64s, the count extended sRGB takes.
+    unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
+        .expect("extended sRGB and four components always make a color")
+}

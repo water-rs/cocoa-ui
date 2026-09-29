@@ -298,6 +298,13 @@ impl SurfaceBuffers {
         true
     }
 
+    /// The pixel format the buffers are configured at — the value the last
+    /// `configure` established (`None` before the first configuration).
+    #[must_use]
+    pub const fn pixel_format(&self) -> MTLPixelFormat {
+        self.pixel_format
+    }
+
     /// Whether a rendered frame is on the layer right now.
     #[must_use]
     pub const fn has_presented_frame(&self) -> bool {

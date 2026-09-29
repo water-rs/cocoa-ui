@@ -110,24 +110,6 @@ pub type PlatformView = objc2_app_kit::NSView;
 #[cfg(target_os = "ios")]
 pub type PlatformView = objc2_ui_kit::UIView;
 
-/// The framework crate whose types appear in this crate's signatures, so a
-/// consumer never pins it separately.
-#[cfg(target_os = "macos")]
-pub use objc2_app_kit;
-/// The framework crate whose types appear in this crate's signatures, so a
-/// consumer never pins it separately.
-pub use objc2_core_foundation;
-/// The framework crate whose types appear in this crate's signatures, so a
-/// consumer never pins it separately.
-pub use objc2_core_graphics;
-/// The framework crate whose types appear in this crate's signatures, so a
-/// consumer never pins it separately.
-pub use objc2_quartz_core;
-/// The framework crate whose types appear in this crate's signatures, so a
-/// consumer never pins it separately.
-#[cfg(target_os = "ios")]
-pub use objc2_ui_kit;
-
 pub use action::ActionTarget;
 pub use color::Rgba;
 pub use color_scheme::ColorScheme;
@@ -137,4 +119,8 @@ pub use image::{Image, ScaleMode};
 pub use objc2;
 pub use objc2::MainThreadMarker;
 pub use objc2::rc::Retained;
+pub use objc2_core_foundation;
+pub use objc2_core_graphics;
+pub use objc2_metal;
+pub use objc2_quartz_core;
 pub use system_font::{FontMetrics, TextStyle};

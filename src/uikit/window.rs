@@ -47,3 +47,26 @@ impl Window {
 pub fn window_of(view: &UIView) -> Option<Retained<UIWindow>> {
     view.window()
 }
+
+/// The main screen's scale — the display scale an off-window view
+/// rasterizes at.
+#[must_use]
+/// # Panics
+///
+/// On a failure to confirm the main thread.
+#[allow(deprecated)]
+pub fn main_screen_scale() -> f64 {
+    objc2_ui_kit::UIScreen::mainScreen(objc2::MainThreadMarker::new().expect("main thread")).scale()
+}
+
+/// Whether the application is in the active state — `WuiGpuSurface`'s
+/// `UIApplication.shared.applicationState == .active` gate.
+#[must_use]
+/// # Panics
+///
+/// On a failure to reach `UIApplication.sharedApplication`.
+pub fn application_is_active() -> bool {
+    let mtm = objc2::MainThreadMarker::new().expect("main thread");
+    objc2_ui_kit::UIApplication::sharedApplication(mtm).applicationState()
+        == objc2_ui_kit::UIApplicationState::Active
+}

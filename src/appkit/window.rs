@@ -525,6 +525,50 @@ impl Delegate {
     }
 }
 
+/// The main screen's backing scale — the display scale an off-window view
+/// rasterizes at, `1.0` when there is no main screen.
+///
+/// # Panics
+///
+/// Off the main thread.
+#[must_use]
+pub fn main_screen_scale() -> f64 {
+    objc2_app_kit::NSScreen::mainScreen(objc2::MainThreadMarker::new().expect("main thread"))
+        .map_or(1.0, |screen| screen.backingScaleFactor())
+}
+
+/// Whether `window` could show a frame it was handed: visible and not
+/// occluded — `WuiSurfacePresentation`'s `!isPresentationOccluded`.
+#[must_use]
+pub fn is_visible(window: &NSWindow) -> bool {
+    window.isVisible()
+        && window
+            .occlusionState()
+            .contains(objc2_app_kit::NSWindowOcclusionState::Visible)
+}
+
+/// Calls `handler` on the main thread every time `window`'s occlusion state
+/// changes — `WuiWindowOcclusionObserver`.
+///
+/// # Panics
+///
+/// If called off the main thread.
+pub fn watch_occlusion(
+    mtm: objc2::MainThreadMarker,
+    window: &NSWindow,
+    handler: impl Fn() + 'static,
+) -> crate::notification::NotificationObserver {
+    crate::notification::observe_object(
+        mtm,
+        &crate::notification::NotificationName::framework(
+            // SAFETY: the notification name is a system constant.
+            unsafe { objc2_app_kit::NSWindowDidChangeOcclusionStateNotification },
+        ),
+        window.as_ref(),
+        handler,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use objc2_app_kit::NSWindowStyleMask;

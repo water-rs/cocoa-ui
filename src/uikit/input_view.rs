@@ -21,7 +21,7 @@ use std::rc::Rc;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObjectProtocol};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_foundation::{
     NSArray, NSAttributedStringKey, NSComparisonResult, NSDictionary, NSRange, NSSet, NSString,
 };
@@ -59,8 +59,7 @@ impl fmt::Debug for InputViewIvars {
             .field("event_handler", &self.event_handler.borrow().is_some())
             .field("caret_provider", &self.caret_provider.borrow().is_some())
             .field("marked_text", &self.marked_text)
-            .field("marked_selection", &self.marked_selection)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -129,23 +128,20 @@ define_class!(
         // SAFETY: see the module safety note.
         #[unsafe(method_id(start))]
         fn start_override(&self) -> Retained<UITextPosition> {
-            let range = self;
             // SAFETY: `TextPosition::new` runs on the main thread.
-            TextPosition::new(self.mtm(), range.ivars().start.get()).into_super()
+            TextPosition::new(self.mtm(), self.ivars().start.get()).into_super()
         }
 
         // SAFETY: see the module safety note.
         #[unsafe(method_id(end))]
         fn end_override(&self) -> Retained<UITextPosition> {
-            let range = self;
-            TextPosition::new(self.mtm(), range.ivars().end.get()).into_super()
+            TextPosition::new(self.mtm(), self.ivars().end.get()).into_super()
         }
 
         // SAFETY: see the module safety note.
         #[unsafe(method(isEmpty))]
         fn is_empty_override(&self) -> bool {
-            let range = self;
-            range.ivars().start.get() == range.ivars().end.get()
+            self.ivars().start.get() == self.ivars().end.get()
         }
     }
 );
@@ -186,7 +182,7 @@ define_class!(
     // SAFETY: `NSObjectProtocol` asks nothing of a `UIView` subclass.
     unsafe impl NSObjectProtocol for InputView {}
 
-    // SAFETY: `UITextInputTraits` requirements are all optional.
+    // SAFETY: `UITextInputTraits` carries only optional selectors.
     unsafe impl UITextInputTraits for InputView {}
 
     // SAFETY: `UIKeyInput`'s requirements are implemented with their
@@ -201,8 +197,18 @@ define_class!(
 
         // SAFETY: `text` is the string UIKit delivers.
         #[unsafe(method(insertText:))]
-        fn insert_text_protocol(&self, text: &NSString) {
-            self.insert_text(text);
+        fn insert_text(&self, text: &NSString) {
+            guarded("InputView insertText:", || {
+                let was_composing = self.has_marked_text();
+                self.clear_marked_text();
+                // Text that ends a composition is that session's commit;
+                // text typed outside one is a plain insertion.
+                self.emit(if was_composing {
+                    SurfaceEvent::CompositionCommit(text.to_string())
+                } else {
+                    SurfaceEvent::TextInput(text.to_string())
+                });
+            });
         }
 
         // SAFETY: plain call.
@@ -246,7 +252,7 @@ define_class!(
             // The host holds no document to edit; a replacement is the input
             // method rewriting its own pre-edit, which arrives as
             // `setMarkedText:` instead.
-            self.insert_text(text);
+            self.insert_marked_text(text);
         }
 
         // SAFETY: plain state read.
@@ -254,8 +260,9 @@ define_class!(
         fn selected_text_range(&self) -> Option<Retained<UITextRange>> {
             let selection = self.ivars().marked_selection.get();
             // SAFETY: `TextRange::new` runs on the main thread.
-            Some(TextRange::new(self.mtm(), selection, selection)
-                        .into_super())
+            Some(
+                TextRange::new(self.mtm(), selection, selection).into_super(),
+            )
         }
 
         // SAFETY: `selected_text_range` is one of this class's `TextRange`s.
@@ -288,7 +295,7 @@ define_class!(
         // SAFETY: `style` is whatever UIKit supplied; the host ignores
         // styling.
         #[unsafe(method(setMarkedTextStyle:))]
-        unsafe fn set_marked_text_style(
+        fn set_marked_text_style(
             &self,
             style: Option<&NSDictionary<NSAttributedStringKey, AnyObject>>,
         ) {
@@ -303,7 +310,7 @@ define_class!(
             selected_range: NSRange,
         ) {
             guarded("InputView setMarkedText:", || {
-                let text = marked_text.map_or_else(String::new, ToString::to_string);
+                let text = marked_text.map_or_else(String::new, std::string::ToString::to_string);
                 let was_composing = self.has_marked_text();
                 if text.is_empty() {
                     self.clear_marked_text();
@@ -359,23 +366,22 @@ define_class!(
             from_position: &UITextPosition,
             to_position: &UITextPosition,
         ) -> Option<Retained<UITextRange>> {
-            downcast_position(from_position).and_then(|from| {
-                downcast_position(to_position).map(|to| {
-                    // SAFETY: `TextRange::new` runs on the main thread.
-                    TextRange::new(self.mtm(), from.min(to), from.max(to))
-                            .into_super()
-                })
-            })
+            match (downcast_position(from_position), downcast_position(to_position)) {
+                (Some(from), Some(to)) => Some(
+                    TextRange::new(self.mtm(), from.min(to), from.max(to)).into_super(),
+                ),
+                _ => None,
+            }
         }
 
         // SAFETY: `position` is this class's `TextPosition`.
         #[unsafe(method_id(positionFromPosition:offset:))]
-        fn position_from_position_offset_protocol(
+        fn position_from_position_offset(
             &self,
             position: &UITextPosition,
             offset: isize,
         ) -> Option<Retained<UITextPosition>> {
-            self.position_from_offset(position, offset)
+            self.offset_position(position, offset)
         }
 
         // SAFETY: `position` is this class's `TextPosition`.
@@ -393,7 +399,7 @@ define_class!(
             } else {
                 offset
             };
-            self.position_from_offset(position, signed)
+            self.offset_position(position, signed)
         }
 
         // SAFETY: both positions are this class's `TextPosition`s.
@@ -453,8 +459,7 @@ define_class!(
         #[unsafe(method_id(tokenizer))]
         fn tokenizer_protocol(&self) -> Retained<objc2::runtime::ProtocolObject<dyn UITextInputTokenizer>> {
             let this: &objc2_ui_kit::UIResponder = self;
-            // SAFETY: `initWithTextInput:` is `UITextInputStringTokenizer`'s
-            // designated initializer for a `UITextInput`-conforming view.
+            // SAFETY: `initWithTextInput:` wires the tokenizer to this input.
             let tokenizer = unsafe {
                 UITextInputStringTokenizer::initWithTextInput(
                     UITextInputStringTokenizer::alloc(self.mtm()),
@@ -473,12 +478,12 @@ define_class!(
             range: &UITextRange,
             direction: UITextLayoutDirection,
         ) -> Option<Retained<UITextPosition>> {
-            let towards_start = direction == UITextLayoutDirection::Left
-                || direction == UITextLayoutDirection::Up;
             downcast_range(range).map(|(start, end)| {
+                let towards_start = direction == UITextLayoutDirection::Left
+                    || direction == UITextLayoutDirection::Up;
                 // SAFETY: `TextPosition::new` runs on the main thread.
                 TextPosition::new(self.mtm(), if towards_start { start } else { end })
-                        .into_super()
+                    .into_super()
             })
         }
 
@@ -489,9 +494,9 @@ define_class!(
             position: &UITextPosition,
             direction: UITextLayoutDirection,
         ) -> Option<Retained<UITextRange>> {
-            let towards_start = direction == UITextLayoutDirection::Left
-                || direction == UITextLayoutDirection::Up;
             downcast_position(position).and_then(|offset| {
+                let towards_start = direction == UITextLayoutDirection::Left
+                    || direction == UITextLayoutDirection::Up;
                 let other = if towards_start {
                     offset.checked_sub(1)?
                 } else {
@@ -500,9 +505,10 @@ define_class!(
                 if other > utf16_len(&self.ivars().marked_text.borrow()) {
                     None
                 } else {
-                    // SAFETY: `TextRange::new` runs on the main thread.
-                    Some(TextRange::new(self.mtm(), offset.min(other), offset.max(other))
-                            .into_super())
+                    Some(
+                        TextRange::new(self.mtm(), offset.min(other), offset.max(other))
+                            .into_super(),
+                    )
                 }
             })
         }
@@ -560,11 +566,11 @@ define_class!(
 
         // SAFETY: `point` is in this view's coordinates.
         #[unsafe(method_id(closestPositionToPoint:))]
-        fn closest_position_to_point_protocol(
+        fn closest_position_to_point(
             &self,
             point: objc2_core_foundation::CGPoint,
         ) -> Option<Retained<UITextPosition>> {
-            Some(self.closest_position_to_point(point))
+            Some(self.closest_position_for_point(point))
         }
 
         // SAFETY: `point`/`range` come from UIKit.
@@ -575,7 +581,7 @@ define_class!(
             range: &UITextRange,
         ) -> Option<Retained<UITextPosition>> {
             let _ = range;
-            Some(self.closest_position_to_point(point))
+            Some(self.closest_position_for_point(point))
         }
 
         // SAFETY: `point` comes from UIKit; no hit-testable document exists.
@@ -676,6 +682,7 @@ define_class!(
             if !self.send_presses(presses, false) {
                 // SAFETY: forwards the unhandled cancellation to `UIResponder`.
                 let _: () =
+                    // SAFETY: `pressesCancelled:withEvent:` is a `UIView` responder method.
                     unsafe { msg_send![super(self), pressesCancelled: presses, withEvent: event] };
             }
         }
@@ -747,46 +754,29 @@ impl InputView {
         self.ivars().caret_provider.replace(Some(Rc::new(provider)));
     }
 
-    /// `UIKeyInput`'s `insertText:`, callable without the `_cmd` argument.
-    fn insert_text(&self, text: &NSString) {
-        guarded("InputView insertText:", || {
-            let was_composing = self.has_marked_text();
-            self.clear_marked_text();
-            // Text that ends a composition is that session's commit;
-            // text typed outside one is a plain insertion.
-            self.emit(if was_composing {
-                SurfaceEvent::CompositionCommit(text.to_string())
-            } else {
-                SurfaceEvent::TextInput(text.to_string())
-            });
-        });
+    fn insert_marked_text(&self, text: &NSString) {
+        self.insert_text(sel!(insertText:), text);
     }
 
-    /// `positionFromPosition:offset:` without the `_cmd` argument.
-    fn position_from_offset(
+    fn offset_position(
         &self,
         position: &UITextPosition,
         offset: isize,
     ) -> Option<Retained<UITextPosition>> {
-        downcast_position(position).and_then(|start| {
-            let moved = start.checked_add_signed(offset)?;
-            if moved > utf16_len(&self.ivars().marked_text.borrow()) {
-                None
-            } else {
-                // SAFETY: `TextPosition::new` runs on the main thread.
+        match downcast_position(position).and_then(|start| start.checked_add_signed(offset)) {
+            Some(moved) if moved <= utf16_len(&self.ivars().marked_text.borrow()) => {
                 Some(TextPosition::new(self.mtm(), moved).into_super())
             }
-        })
+            _ => None,
+        }
     }
 
-    /// `closestPositionToPoint:` without the `_cmd` argument.
-    fn closest_position_to_point(
+    fn closest_position_for_point(
         &self,
         point: objc2_core_foundation::CGPoint,
     ) -> Retained<UITextPosition> {
         let _ = point;
         let selection = self.ivars().marked_selection.get();
-        // SAFETY: `TextPosition::new` runs on the main thread.
         TextPosition::new(self.mtm(), selection).into_super()
     }
 
@@ -844,18 +834,18 @@ impl InputView {
 
     /// A press batch as `Modifiers` + `Key` events, one pair per key;
     /// whether every press delivered an event.
-    fn send_presses(&self, presses: &NSSet<UIPress>, down: bool) -> bool {
+    fn send_presses(&self, press_set: &NSSet<UIPress>, pressed: bool) -> bool {
         let mut delivered = false;
-        for keypress in presses {
-            let Some(ui_key) = keypress.key(self.mtm()) else {
+        for press_item in press_set {
+            let Some(key) = press_item.key(self.mtm()) else {
                 continue;
             };
-            let modifiers = keys::surface_modifiers(ui_key.modifierFlags());
+            let modifiers = keys::surface_modifiers(key.modifierFlags());
             self.emit(SurfaceEvent::Modifiers(modifiers));
-            let code = keys::surface_code(&ui_key);
+            let code = keys::surface_code(&key);
             self.emit(SurfaceEvent::Key {
-                pressed: down,
-                key: keys::surface_key(&ui_key),
+                pressed,
+                key: keys::surface_key(&key),
                 code,
                 modifiers,
                 repeat: false,

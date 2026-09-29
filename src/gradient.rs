@@ -34,7 +34,7 @@ pub struct GradientStop {
     /// The stop's position along the gradient.
     pub position: f64,
     /// The stop's colour.
-    pub color: Retained<objc2_core_graphics::CGColor>,
+    pub color: objc2_core_foundation::CFRetained<objc2_core_graphics::CGColor>,
 }
 
 /// A gradient layer owned by its host view's layer tree.

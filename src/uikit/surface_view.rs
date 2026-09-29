@@ -19,6 +19,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
+use crate::PlatformView;
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol};
 use objc2::sel;
@@ -28,7 +29,7 @@ use objc2_quartz_core::CALayer;
 use objc2_ui_kit::{
     UIGestureRecognizer, UIGestureRecognizerDelegate, UIGestureRecognizerState,
     UIHoverGestureRecognizer, UIPanGestureRecognizer, UIPinchGestureRecognizer, UIScrollView,
-    UITapGestureRecognizer, UITouch, UIView,
+    UITapGestureRecognizer, UITouch, UITraitCollection, UIView,
 };
 
 use crate::callback::guarded;
@@ -45,6 +46,8 @@ type InteractionHandler = Rc<dyn Fn(PointerInteraction)>;
 pub struct SurfaceViewIvars {
     on_layout: RefCell<Option<LifecycleHandler>>,
     on_window_changed: RefCell<Option<LifecycleHandler>>,
+    on_backing_changed: RefCell<Option<LifecycleHandler>>,
+    on_visibility_changed: RefCell<Option<LifecycleHandler>>,
     on_interaction: RefCell<Option<InteractionHandler>>,
     /// The layer the renderer presents frames into, a sublayer of `layer`.
     presentation_layer: RefCell<Option<Retained<CALayer>>>,
@@ -58,9 +61,9 @@ impl fmt::Debug for SurfaceViewIvars {
     }
 }
 
+/// A hover callback: pointer position or exit.
 type HoverHandler = Rc<dyn Fn(Option<kurbo::Point>)>;
 type TapHandler = Rc<dyn Fn()>;
-
 /// The ivars of a [`GestureTarget`].
 #[derive(Default)]
 struct GestureTargetIvars {
@@ -252,6 +255,28 @@ define_class!(
         }
 
         // SAFETY: see the module safety note.
+        #[unsafe(method(didMoveToSuperview))]
+        fn did_move_to_superview_override(&self) {
+            // SAFETY: see the module safety note.
+            let _: () = unsafe { msg_send![super(self), didMoveToSuperview] };
+            let handler = self.ivars().on_visibility_changed.borrow().clone();
+            if let Some(handler) = handler {
+                handler();
+            }
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(traitCollectionDidChange:))]
+        fn trait_collection_did_change(&self, previous: Option<&UITraitCollection>) {
+            // SAFETY: see the module safety note.
+            let _: () = unsafe { msg_send![super(self), traitCollectionDidChange: previous] };
+            let handler = self.ivars().on_backing_changed.borrow().clone();
+            if let Some(handler) = handler {
+                handler();
+            }
+        }
+
+        // SAFETY: see the module safety note.
         #[unsafe(method(touchesBegan:withEvent:))]
         fn touches_began(&self, touches: &NSSet<UITouch>, event: Option<&objc2_ui_kit::UIEvent>) {
             let _ = event;
@@ -307,6 +332,7 @@ impl SurfaceView {
         // them — `contentsScale` carries that.
         let presentation = CALayer::new();
         presentation.setOpaque(false);
+        // SAFETY: `kCAGravityResize` is a `CAContentsGravity` constant.
         // SAFETY: `kCAGravityResize` is a `CAContentsGravity` constant.
         presentation.setContentsGravity(unsafe { objc2_quartz_core::kCAGravityResize });
         view.layer().addSublayer(&presentation);
@@ -372,6 +398,9 @@ impl SurfaceView {
     ///
     /// Panics when called before `new` installs the layer — impossible.
     #[must_use]
+    /// # Panics
+    ///
+    /// If called before `add_presentation_layer`.
     pub fn presentation_layer(&self) -> Retained<CALayer> {
         self.ivars()
             .presentation_layer
@@ -380,12 +409,70 @@ impl SurfaceView {
             .expect("presentation layer is created in `new`")
     }
 
+    /// The view's bounds size in logical units.
+    #[must_use]
+    pub fn bounds_size(&self) -> crate::geometry::Size {
+        crate::view::bounds(self).size
+    }
+
+    /// The window screen's scale — physical pixels per logical unit —
+    /// `None` while the view is off-window.
+    #[must_use]
+    pub fn backing_scale(&self) -> Option<f64> {
+        crate::view::window(self).map(|window| window.screen().scale())
+    }
+
+    /// Whether the view can present: on a window and not hidden inside the
+    /// hierarchy.
+    #[must_use]
+    pub fn is_visible(&self) -> bool {
+        let mut hidden_ancestor = false;
+        let mut ancestor = self.superview();
+        while let Some(view) = ancestor {
+            if view.isHidden() {
+                hidden_ancestor = true;
+                break;
+            }
+            ancestor = view.superview();
+        }
+        !self.isHidden() && !hidden_ancestor && crate::view::window(self).is_some()
+    }
+
+    /// The view's bounds in `to`'s coordinate space.
+    #[must_use]
+    pub fn bounds_in(&self, to: &PlatformView) -> crate::geometry::Rect {
+        crate::view::convert_rect(self, crate::view::bounds(self), Some(to))
+    }
+
+    /// The view as its platform view.
+    #[must_use]
+    pub fn as_platform_view(&self) -> &PlatformView {
+        self
+    }
+
     /// Calls `handler` after every layout pass.
     pub fn set_layout_handler(&self, handler: impl Fn() + 'static) {
         self.ivars().on_layout.replace(Some(Rc::new(handler)));
     }
 
     /// Calls `handler` when the view moves into or out of a window.
+    /// Registers `handler` for visibility transitions (hidden ancestors,
+    /// window attach/detach).
+    pub fn set_visibility_changed_handler(&self, handler: impl Fn() + 'static) {
+        self.ivars()
+            .on_visibility_changed
+            .replace(Some(Rc::new(handler)));
+    }
+
+    /// Registers `handler` for backing-property changes (screen scale,
+    /// dynamic range).
+    pub fn set_backing_changed_handler(&self, handler: impl Fn() + 'static) {
+        self.ivars()
+            .on_backing_changed
+            .replace(Some(Rc::new(handler)));
+    }
+
+    /// Registers `handler` for window attach/detach transitions.
     pub fn set_window_changed_handler(&self, handler: impl Fn() + 'static) {
         self.ivars()
             .on_window_changed

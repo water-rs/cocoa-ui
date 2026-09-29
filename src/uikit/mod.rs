@@ -100,4 +100,4 @@ pub use table::{SectionKind, TableCell, TableHeaderFooterView, TableSource, Tabl
 pub use tabs::{TabContentController, TabSpec, TabsController};
 pub use text_field::{SecureField, TextField};
 pub use view_controller::ViewController;
-pub use window::{Window, window_of};
+pub use window::{Window, application_is_active, main_screen_scale, window_of};

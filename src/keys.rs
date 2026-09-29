@@ -427,7 +427,7 @@ mod imp {
 
     /// `UIKit` `UIKeyboardHIDUsage` values to W3C `KeyboardEvent.code` names.
     ///
-    /// `UIKey::keyCode` is a USB HID usage, so this is the HID keyboard page
+    /// `UIKey.keyCode` is a USB HID usage, so this is the HID keyboard page
     /// mapped onto the same vocabulary `AppKit`'s virtual keycodes map onto.
     #[allow(clippy::too_many_lines)]
     const fn hid_usage_code(usage: u32) -> Option<&'static str> {
@@ -611,14 +611,14 @@ mod imp {
     /// The W3C `KeyboardEvent.code` of the physical key this press came from.
     #[must_use]
     pub fn surface_code(key: &UIKey) -> Code {
-        hid_usage_code(u32::try_from(key.keyCode().0).unwrap_or(0))
+        hid_usage_code(u32::try_from(key.keyCode().0).unwrap_or(u32::MAX))
             .map_or(super::unidentified_code(), code_named)
     }
 
     /// The W3C `KeyboardEvent.key` this press produces.
     #[must_use]
     pub fn surface_key(key: &UIKey) -> Key {
-        if let Some(named) = hid_usage_key(u32::try_from(key.keyCode().0).unwrap_or(0)) {
+        if let Some(named) = hid_usage_key(u32::try_from(key.keyCode().0).unwrap_or(u32::MAX)) {
             return key_named(named);
         }
         let characters = key.charactersIgnoringModifiers();
@@ -658,15 +658,12 @@ mod imp {
     /// Modifier presses emit `Modifiers`/`Key` pairs via the press handler;
     /// `press.key` identifies them by HID usage.
     #[must_use]
-    pub fn is_modifier_press(press: &UIPress) -> bool {
-        let Some(mtm) = objc2::MainThreadMarker::new() else {
-            return false;
-        };
+    pub fn is_modifier_press(mtm: objc2::MainThreadMarker, press: &UIPress) -> bool {
         press.key(mtm).is_some_and(|key| {
-            hid_usage_key(u32::try_from(key.keyCode().0).unwrap_or(0)).is_some_and(|_| {
-                // A modifier keycode is exactly one the *code* table lists in
-                // the 0xE0..=0xE7 modifier range.
-                matches!(u32::try_from(key.keyCode().0).unwrap_or(0), 0xE0..=0xE7)
+            hid_usage_key(u32::try_from(key.keyCode().0).unwrap_or(u32::MAX)).is_some_and(|_| {
+                // A modifier keycode is exactly one the *code* table lists
+                // in the 0xE0..=0xE7 modifier range.
+                matches!(key.keyCode().0, 0xE0..=0xE7)
             })
         })
     }

@@ -2,6 +2,7 @@
 
 #[cfg(target_os = "macos")]
 use objc2::rc::Retained;
+use objc2_quartz_core::CALayer;
 use objc2_quartz_core::CATransaction;
 #[cfg(target_os = "macos")]
 use objc2_quartz_core::CATransform3D;
@@ -336,4 +337,26 @@ pub fn animate_layer_transform(
 
     set_layer_transform(layer, transform);
     layer.addAnimation_forKey(&animation, Some(&NSString::from_str(key)));
+}
+/// Sets a layer's frame — the presentation plane updates `WuiGpuSurface`
+/// batches inside a transaction.
+pub fn set_frame(layer: &CALayer, frame: crate::geometry::Rect) {
+    layer.setFrame(frame.into());
+}
+
+/// Sets a layer's contents scale to the display's backing factor.
+pub fn set_contents_scale(layer: &CALayer, scale: f64) {
+    layer.setContentsScale(scale);
+}
+
+/// The presentation plane's clear color.
+pub fn set_background_clear(layer: &CALayer) {
+    layer.setBackgroundColor(None);
+}
+
+/// `contentsGravity = kCAGravityResize` — presented content stretches to the
+/// layer's bounds rather than rescaling point-for-point.
+pub fn set_contents_gravity_resize(layer: &CALayer) {
+    // SAFETY: `kCAGravityResize` is a Core Animation framework constant.
+    layer.setContentsGravity(unsafe { objc2_quartz_core::kCAGravityResize });
 }

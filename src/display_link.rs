@@ -194,7 +194,7 @@ impl FrameClock {
             #[cfg(target_os = "ios")]
             {
                 let _ = window;
-                msg_send![<objc2_ui_kit::UIScreen as objc2::ClassType>::class(), displayLinkWithTarget:&*target, selector:sel!(tick:)]
+                msg_send![objc2::class!(CADisplayLink), displayLinkWithTarget:&*target, selector:sel!(tick:)]
             }
         };
         let maximum =

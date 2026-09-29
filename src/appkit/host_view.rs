@@ -81,6 +81,8 @@ pub struct HostViewIvars {
     tracking_area: RefCell<Option<Retained<NSTrackingArea>>>,
     key: RefCell<Option<KeyHandler>>,
     right_mouse: RefCell<Option<RightMouseHandler>>,
+    /// `viewDidChangeBackingProperties` subscribers — backing-scale changes.
+    backing_changed: RefCell<Option<WindowHandler>>,
     /// Whether the view's own content is laid out against its bounds — the
     /// answer to "does this view manage its own safe area".
     manages_safe_area: std::cell::Cell<bool>,
@@ -108,6 +110,7 @@ impl fmt::Debug for HostViewIvars {
             .field("mouse_down", &self.mouse_down.borrow().is_some())
             .field("mouse_dragged", &self.mouse_dragged.borrow().is_some())
             .field("drop", &self.drop.borrow().is_some())
+            .field("backing_changed", &self.backing_changed.borrow().is_some())
             .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("measure", &self.measure.borrow().is_some())
             .field("manages_safe_area", &self.manages_safe_area.get())
@@ -369,6 +372,20 @@ define_class!(
         }
 
         // SAFETY: see the module safety note.
+        #[unsafe(method(viewDidChangeBackingProperties))]
+        fn view_did_change_backing_properties(&self) {
+            guarded("HostView viewDidChangeBackingProperties", || {
+                // SAFETY: see the module safety note.
+                let _: () =
+                    unsafe { msg_send![super(self), viewDidChangeBackingProperties] };
+                let handler = self.ivars().backing_changed.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self);
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
         #[unsafe(method_id(hitTest:))]
         fn hit_test_override(&self, point: NSPoint) -> Option<Retained<NSView>> {
             guarded("HostView hitTest:", || {
@@ -530,6 +547,12 @@ impl HostView {
     /// `AppKit` hit testing is.
     pub fn set_hit_test_handler(&self, handler: impl Fn(&Self, Point) -> HitTest + 'static) {
         self.ivars().hit_test.replace(Some(Rc::new(handler)));
+    }
+
+    /// Calls `handler` when the view's backing store properties change —
+    /// typically a move to a differently scaled display.
+    pub fn set_backing_changed_handler(&self, handler: impl Fn(&Self) + 'static) {
+        self.ivars().backing_changed.replace(Some(Rc::new(handler)));
     }
 
     /// Calls `handler` every time the view moves into or out of a window —

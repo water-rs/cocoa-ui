@@ -113,4 +113,4 @@ pub use split::{Column, ColumnWidth, SplitViewController};
 pub use text_field::{SecureField, TextField};
 pub use toolbar::{HostedItem, HostedSearch, ToolbarChild, ToolbarContent, WindowToolbar};
 pub use view_controller::ViewController;
-pub use window::{Window, WindowStyle};
+pub use window::{Window, WindowStyle, is_visible, main_screen_scale, watch_occlusion};

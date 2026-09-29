@@ -148,7 +148,32 @@ impl ImageView {
     }
 
     /// Names the view to a screen reader; `None` leaves it unnamed. Setting a
-    /// label marks the view an accessibility element.
+    /// label marks the view an accessibility element.    /// The window's backing scale — `None` while the view is off-window.
+    #[must_use]
+    pub fn backing_scale(&self) -> Option<f64> {
+        crate::view::window(self).map(|window| window.backingScaleFactor())
+    }
+
+    /// The view's `accessibilityValue`.
+    pub fn set_accessibility_value(&self, value: &str) {
+        // SAFETY: `setAccessibilityValue` is a plain property setter on the
+        // main thread.
+        unsafe { self.setAccessibilityValue(Some(&NSString::from_str(value))) };
+    }
+
+    /// `isAccessibilityElement(true)` + the image role — what
+    /// `accessibilityTraits.insert(.image)` is on `UIKit`.
+    pub fn set_image_trait(&self) {
+        // SAFETY: the setters are plain property accessors on the main
+        // thread; the role static is a system constant.
+        unsafe {
+            self.setAccessibilityElement(true);
+            self.setAccessibilityRole(Some(objc2_app_kit::NSAccessibilityImageRole));
+        }
+    }
+
+    /// The view's `accessibilityLabel`; an empty label also clears
+    /// `isAccessibilityElement` — `WuiPictureView`'s conditional pair.
     pub fn set_accessibility_label(&self, label: Option<&str>) {
         self.setAccessibilityElement(label.is_some());
         self.setAccessibilityLabel(label.map(NSString::from_str).as_deref());
