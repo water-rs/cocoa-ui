@@ -27,8 +27,8 @@ use objc2::{
     ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
-    NSColor, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags,
-    NSForegroundColorAttributeName, NSImage, NSMenu, NSMenuItem, NSPopUpButton, NSView,
+    NSColor, NSControlStateValueOff, NSControlStateValueOn, NSForegroundColorAttributeName,
+    NSImage, NSMenu, NSMenuItem, NSPopUpButton, NSView,
 };
 use objc2_foundation::{
     NSMutableAttributedString, NSObject, NSObjectProtocol, NSRange, NSRect, NSString,
@@ -71,43 +71,6 @@ impl Menu {
     }
 }
 
-/// The closure a `with_action` menu item invokes when it fires; [`ItemTarget`]
-/// holds it so the item's weak target reference always has a live owner.
-type ItemHandler = Box<dyn Fn()>;
-
-define_class!(
-    // SAFETY: `ItemTarget` is an `NSObject` subclass with no subclassing
-    // requirements; `fire:` only forwards to the stored closure.
-    #[unsafe(super(NSObject))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "CocoaUiMenuItemTarget"]
-    #[ivars = ItemHandler]
-    struct ItemTarget;
-
-    impl ItemTarget {
-        /// Fires the item's handler. Called by `NSMenuItem`'s
-        /// target/action mechanism; `sender` is the item itself.
-        #[unsafe(method(fire:))]
-        fn fire(&self, _sender: &NSMenuItem) {
-            (self.ivars())();
-        }
-    }
-);
-
-impl ItemTarget {
-    fn new(mtm: MainThreadMarker, handler: impl Fn() + 'static) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(Box::new(handler) as ItemHandler);
-        // SAFETY: `init` is `NSObject`'s designated initializer.
-        unsafe { msg_send![super(this), init] }
-    }
-}
-
-impl std::fmt::Debug for ItemTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ItemTarget").finish_non_exhaustive()
-    }
-}
-
 /// One entry of a [`Menu`].
 ///
 /// `title` is the label shown for the item; `action`, when given, is the
@@ -118,7 +81,7 @@ pub struct MenuItem {
     item: Retained<NSMenuItem>,
     /// Keeps the `with_action` closure target alive: `NSMenuItem` does not
     /// retain its target.
-    action_target: Option<Retained<ItemTarget>>,
+    action_target: Option<Retained<MenuItemTarget>>,
 }
 
 impl MenuItem {
@@ -169,12 +132,23 @@ impl MenuItem {
     /// standard action up the responder chain.
     #[must_use]
     pub fn with_action(mut self, handler: impl Fn() + 'static) -> Self {
-        let target = ItemTarget::new(self.item.mtm(), handler);
+        let target = MenuItemTarget::new(self.item.mtm(), Rc::new(handler));
         // SAFETY: `setTarget:`/`setAction:` are the documented way to point
-        // an item at a per-item receiver; `fire:` is defined by the target.
+        // an item at a per-item receiver; `menuItemFired:` is defined by the
+        // target. The item holds the target weakly, so `self.action_target`
+        // keeps it alive.
         unsafe {
             self.item.setTarget(Some(target.as_super()));
-            self.item.setAction(Some(sel!(fire:)));
+            self.item.setAction(Some(sel!(menuItemFired:)));
+            // `setRepresentedObject:` retains the target for the item's
+            // lifetime, so the handler is still valid once `add_item`
+            // drops this `MenuItem`.
+            self.item.setRepresentedObject(Some(
+                std::ptr::from_ref::<MenuItemTarget>(target.as_ref())
+                    .cast::<AnyObject>()
+                    .as_ref()
+                    .unwrap_unchecked(),
+            ));
         }
         self.action_target = Some(target);
         self
@@ -511,6 +485,7 @@ impl MenuItem {
         }
         Self {
             item: item.retain(),
+            action_target: None,
         }
     }
 }

@@ -149,7 +149,6 @@ fn menu_image(symbol: Option<&str>) -> Option<Retained<UIImage>> {
     symbol.and_then(|symbol| UIImage::systemImageNamed(&NSString::from_str(symbol)))
 }
 
-
 /// One child of a [`Menu`]: a triggerable action or a nested menu.
 #[derive(Debug, Clone)]
 pub enum MenuElement {
