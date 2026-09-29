@@ -448,6 +448,13 @@ impl TableView {
         table.reloadData();
     }
 
+    /// The size `AppKit` reports this view wants — the `fittingSize` the
+    /// leaf measures through.
+    #[must_use]
+    pub fn fitting(&self) -> crate::Size {
+        self.fittingSize().into()
+    }
+
     /// Whether the table is drawing sidebar chrome.
     #[must_use]
     pub fn is_sidebar(&self) -> bool {

@@ -83,6 +83,7 @@ pub use search_bar::SearchBar;
 pub use split::{ColumnWidth, SplitColumnController, SplitController};
 pub mod table;
 pub use stepper::Stepper;
+pub use table::{IndexPath, SectionKind, TableCell, TableHeaderFooterView, TableSource, TableView};
 pub use tabs::{TabContentController, TabSpec, TabsController};
 pub use text_field::{SecureField, TextField};
 pub use view_controller::ViewController;
