@@ -44,9 +44,9 @@ use objc2_ui_kit::{
     NSDirectionalEdgeInsets, NSIndexPathUIKitAdditions, NSLayoutConstraint,
     NSObjectUIAccessibility, UIAccessibilityTraitSelected, UIColor, UIContextualAction,
     UIContextualActionStyle, UIEdgeInsets, UIListContentConfiguration, UIScrollViewDelegate,
-    UISwipeActionsConfiguration, UITableView, UITableViewCell, UITableViewCellAccessoryType,
-    UITableViewCellEditingStyle, UITableViewCellSelectionStyle, UITableViewCellStyle,
-    UITableViewDataSource, UITableViewDelegate, UITableViewHeaderFooterView,
+    UISwipeActionsConfiguration, UITableView, UITableViewAutomaticDimension, UITableViewCell,
+    UITableViewCellAccessoryType, UITableViewCellEditingStyle, UITableViewCellSelectionStyle,
+    UITableViewCellStyle, UITableViewDataSource, UITableViewDelegate, UITableViewHeaderFooterView,
     UITableViewRowAnimation, UITableViewScrollPosition, UITableViewSeparatorInsetReference,
     UITableViewStyle, UIView,
 };
@@ -91,6 +91,20 @@ pub trait TableSource: 'static {
 
     /// The height `index`'s row takes.
     fn row_height(&self, table: &TableView, index: IndexPath) -> f64;
+
+    /// The height `section`'s header takes. `f64::NAN` (the default) maps
+    /// to `UITableViewAutomaticDimension`.
+    fn section_header_height(&self, table: &TableView, section: usize) -> f64 {
+        let _ = (table, section);
+        f64::NAN
+    }
+
+    /// The height `section`'s footer takes. `f64::NAN` (the default) maps
+    /// to `UITableViewAutomaticDimension`.
+    fn section_footer_height(&self, table: &TableView, section: usize) -> f64 {
+        let _ = (table, section);
+        f64::NAN
+    }
 
     /// Whether `index`'s row may enter the delete affordance — both the
     /// edit-mode minus control and the trailing swipe action consult it.
@@ -147,6 +161,23 @@ impl fmt::Debug for TableViewIvars {
 impl TableViewIvars {
     fn source(&self) -> Option<Rc<dyn TableSource>> {
         self.source.borrow().clone()
+    }
+}
+
+/// Translates a source's `f64::NAN` into `UITableViewAutomaticDimension`.
+trait NanOrAutomatic {
+    fn or_nan_to_automatic(self) -> CGFloat;
+}
+
+impl NanOrAutomatic for f64 {
+    fn or_nan_to_automatic(self) -> CGFloat {
+        if self.is_nan() {
+            // SAFETY: reading an extern `CGFloat` constant is side-effect
+            // free.
+            unsafe { UITableViewAutomaticDimension }
+        } else {
+            self
+        }
     }
 }
 
@@ -305,6 +336,30 @@ define_class!(
                 self.ivars().source().map_or(0.0, |source| {
                     source.row_height(self, table_index(index_path))
                 })
+            })
+        }
+
+        #[unsafe(method(tableView:heightForHeaderInSection:))]
+        fn height_for_header(&self, _table_view: &UITableView, section: NSInteger) -> CGFloat {
+            guarded("uikit::table::source.section_header_height", || {
+                self.ivars()
+                    .source()
+                    .map_or(f64::NAN, |source| {
+                        source.section_header_height(self, section.cast_unsigned())
+                    })
+                    .or_nan_to_automatic()
+            })
+        }
+
+        #[unsafe(method(tableView:heightForFooterInSection:))]
+        fn height_for_footer(&self, _table_view: &UITableView, section: NSInteger) -> CGFloat {
+            guarded("uikit::table::source.section_footer_height", || {
+                self.ivars()
+                    .source()
+                    .map_or(f64::NAN, |source| {
+                        source.section_footer_height(self, section.cast_unsigned())
+                    })
+                    .or_nan_to_automatic()
             })
         }
 
