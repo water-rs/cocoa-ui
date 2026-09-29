@@ -107,6 +107,10 @@ pub enum Timing {
 
 /// Runs `body` while `timing` plays its animatable changes: a
 /// `UIViewPropertyAnimator` on iOS, an `NSAnimationContext` group on macOS.
+///
+/// # Panics
+///
+/// When called off the main thread.
 #[cfg(target_os = "ios")]
 pub fn animate_with(timing: Timing, body: impl FnOnce() + 'static) {
     use objc2::MainThreadOnly;

@@ -79,7 +79,14 @@ impl fmt::Debug for HostViewIvars {
             .field("reported_size", &self.reported_size.get())
             .field("fills_window", &self.fills_window.get())
             .field("window", &self.window.borrow().is_some())
+            .field("superview", &self.superview.borrow().is_some())
             .field("measure", &self.measure.borrow().is_some())
+            .field("primary_content", &self.primary_content.borrow().is_some())
+            .field(
+                "scroll_surface_candidates",
+                &self.scroll_surface_candidates.borrow().is_some(),
+            )
+            .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("manages_safe_area", &self.manages_safe_area.get())
             .field("intrinsic_auto_layout", &self.intrinsic_auto_layout.get())
             .finish()
@@ -437,8 +444,11 @@ impl HostView {
             return;
         }
         let width = self.bounds().size.width;
-        if width > 0.0 && ivars.last_auto_layout_width.replace(width) != width {
-            self.invalidateIntrinsicContentSize();
+        if width > 0.0 {
+            let previous = ivars.last_auto_layout_width.replace(width);
+            if (previous - width).abs() > 0.0 {
+                self.invalidateIntrinsicContentSize();
+            }
         }
     }
 
