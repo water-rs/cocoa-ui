@@ -175,13 +175,25 @@ impl Label {
                 last_baseline: None,
             };
         };
-        crate::text::measure(
+        let mut metrics = crate::text::measure(
             MainThreadMarker::from(self),
             &text,
             wrap,
             self.ivars().line_limit.get(),
             self.display_scale(),
-        )
+        );
+        // A frame sized to bare text bounds is already too narrow for the
+        // cell — `NSTextFieldCell` keeps a horizontal inset between its
+        // drawing frame and the text and would wrap a trailing word — so
+        // answer the way `-fittingSize` does (`cellSize`), padded by the
+        // cell's own inset over the intrinsic text extent.
+        let scale = self.display_scale().max(1.0);
+        let inset = self
+            .cell()
+            .map_or(0.0, |cell| cell.cellSize().width - self.intrinsicContentSize().width)
+            .max(0.0);
+        metrics.size.width = ((metrics.size.width + inset) * scale).ceil() / scale;
+        metrics
     }
 
     /// Device pixels per point where the label is drawn — its window's
