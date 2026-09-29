@@ -38,7 +38,7 @@ use objc2::runtime::ProtocolObject;
 use objc2::{
     ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
 };
-use objc2_core_foundation::{CGFloat, CGRect};
+use objc2_core_foundation::{CGFloat, CGRect, CGSize};
 use objc2_foundation::{NSArray, NSIndexPath, NSInteger, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
     NSDirectionalEdgeInsets, NSIndexPathUIKitAdditions, NSLayoutConstraint,
