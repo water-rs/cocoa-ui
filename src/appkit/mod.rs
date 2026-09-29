@@ -34,6 +34,7 @@
 mod appearance;
 mod application;
 pub mod button;
+mod color_view;
 mod color_well;
 pub mod colors;
 mod host_view;
@@ -45,6 +46,7 @@ mod window;
 pub use appearance::ColorSchemeObservation;
 pub use application::{ActivationPolicy, Application, ApplicationHandlers};
 pub use button::Button;
+pub use color_view::ColorView;
 pub use color_well::ColorWell;
 pub use colors::AppColor;
 pub use host_view::{HitTest, HostView};
