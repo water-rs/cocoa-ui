@@ -42,6 +42,13 @@ impl NotificationName {
         let name: &'static NSString = unsafe { NSCurrentLocaleDidChangeNotification };
         Self(name.retain())
     }
+
+    /// A notification name a framework defines: one of the `NSString`
+    /// constants `AppKit`/`UIKit` export, retained here for registration.
+    #[must_use]
+    pub fn framework(name: &'static NSString) -> Self {
+        Self(name.retain())
+    }
 }
 
 /// Keeps a notification observer registered; dropping it removes the
@@ -79,6 +86,27 @@ pub fn observe(
     name: &NotificationName,
     handler: impl Fn() + 'static,
 ) -> NotificationObserver {
+    observe_impl(mtm, name, None, handler)
+}
+
+/// Like [`observe`], but only for notifications whose object is `object` —
+/// the center filters delivery to notifications posted on that instance.
+pub fn observe_object(
+    mtm: MainThreadMarker,
+    name: &NotificationName,
+    object: &AnyObject,
+    handler: impl Fn() + 'static,
+) -> NotificationObserver {
+    observe_impl(mtm, name, Some(object), handler)
+}
+
+/// The registration [`observe`] and [`observe_object`] share.
+fn observe_impl(
+    mtm: MainThreadMarker,
+    name: &NotificationName,
+    object: Option<&AnyObject>,
+    handler: impl Fn() + 'static,
+) -> NotificationObserver {
     // The center may release the block on the thread that posted the last
     // notification it delivered, so the handler is bound to the main thread
     // and dropped there.
@@ -94,7 +122,12 @@ pub fn observe(
     let queue = NSOperationQueue::mainQueue();
     // SAFETY: see the module safety note.
     let token = unsafe {
-        center.addObserverForName_object_queue_usingBlock(Some(&name.0), None, Some(&queue), &block)
+        center.addObserverForName_object_queue_usingBlock(
+            Some(&name.0),
+            object,
+            Some(&queue),
+            &block,
+        )
     };
     NotificationObserver { center, token }
 }

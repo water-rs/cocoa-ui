@@ -35,6 +35,7 @@ pub enum HitTest {
 type LayoutHandler = Rc<dyn Fn(&HostView)>;
 type ResizeHandler = Rc<dyn Fn(&HostView, Size)>;
 type HitTestHandler = Rc<dyn Fn(&HostView, Point) -> HitTest>;
+type WindowHandler = Rc<dyn Fn(&HostView)>;
 
 /// The handlers a [`HostView`] calls.
 #[derive(Default)]
@@ -42,6 +43,7 @@ pub struct HostViewIvars {
     layout: RefCell<Option<LayoutHandler>>,
     resize: RefCell<Option<ResizeHandler>>,
     hit_test: RefCell<Option<HitTestHandler>>,
+    window: RefCell<Option<WindowHandler>>,
 }
 
 impl fmt::Debug for HostViewIvars {
@@ -50,6 +52,7 @@ impl fmt::Debug for HostViewIvars {
             .field("layout", &self.layout.borrow().is_some())
             .field("resize", &self.resize.borrow().is_some())
             .field("hit_test", &self.hit_test.borrow().is_some())
+            .field("window", &self.window.borrow().is_some())
             .finish()
     }
 }
@@ -112,6 +115,19 @@ define_class!(
         }
 
         // SAFETY: see the module safety note.
+        #[unsafe(method(viewDidMoveToWindow))]
+        fn view_did_move_to_window_override(&self) {
+            guarded("HostView viewDidMoveToWindow", || {
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), viewDidMoveToWindow] };
+                let handler = self.ivars().window.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self);
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
         #[unsafe(method_id(hitTest:))]
         fn hit_test_override(&self, point: NSPoint) -> Option<Retained<NSView>> {
             guarded("HostView hitTest:", || {
@@ -158,6 +174,13 @@ impl HostView {
     /// `AppKit` hit testing is.
     pub fn set_hit_test_handler(&self, handler: impl Fn(&Self, Point) -> HitTest + 'static) {
         self.ivars().hit_test.replace(Some(Rc::new(handler)));
+    }
+
+    /// Calls `handler` every time the view moves into or out of a window —
+    /// `viewDidMoveToWindow`, the point where a focus request becomes
+    /// possible or is lost.
+    pub fn set_window_handler(&self, handler: impl Fn(&Self) + 'static) {
+        self.ivars().window.replace(Some(Rc::new(handler)));
     }
 
     /// Adds `view` above the existing subviews.

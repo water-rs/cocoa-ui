@@ -59,6 +59,7 @@ mod callback;
 pub mod color;
 pub mod color_scheme;
 pub mod core_animation;
+pub mod focus;
 pub mod font;
 pub mod fonts;
 pub mod geometry;
