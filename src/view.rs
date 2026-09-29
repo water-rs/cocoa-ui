@@ -346,12 +346,13 @@ pub fn layout_immediately(view: &PlatformView) {
 }
 
 /// Marks `view` and its subtree as needing display, then draws it.
+///
+/// `UIView` has no `displayIfNeeded` — that method is `CALayer`'s, so the
+/// display pass is flushed on the layer that backs the view.
 #[cfg(target_os = "ios")]
 pub fn display_immediately(view: &PlatformView) {
-    use objc2::msg_send;
     view.setNeedsDisplay();
-    // SAFETY: `displayIfNeeded` is a `UIView` no-argument method.
-    let _: () = unsafe { msg_send![view, displayIfNeeded] };
+    view.layer().displayIfNeeded();
 }
 
 /// Performs any pending layout on `view`'s layer tree.
