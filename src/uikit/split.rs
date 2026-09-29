@@ -132,6 +132,9 @@ type CollapseHandler = Rc<dyn Fn(isize, bool)>;
 pub struct SplitControllerIvars {
     /// Called when a column collapses or expands: `(column, collapsed)`.
     collapse: RefCell<Option<CollapseHandler>>,
+    /// The column a collapsed split shows first; `None` keeps the proposed
+    /// column.
+    collapsed_top: RefCell<Option<UISplitViewControllerColumn>>,
 }
 
 impl fmt::Debug for SplitControllerIvars {
@@ -183,6 +186,19 @@ define_class!(
                 handler(column.0, false);
             }
         }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(splitViewController:topColumnForCollapsingToProposedTopColumn:))]
+        fn split_view_controller_top_column_for_collapsing_to_proposed_top_column(
+            &self,
+            _svc: &UISplitViewController,
+            proposed_top_column: UISplitViewControllerColumn,
+        ) -> UISplitViewControllerColumn {
+            self.ivars()
+                .collapsed_top
+                .borrow()
+                .unwrap_or(proposed_top_column)
+        }
     }
 );
 
@@ -192,6 +208,7 @@ impl SplitController {
     pub fn new(mtm: MainThreadMarker, triple: bool) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(SplitControllerIvars {
             collapse: RefCell::new(None),
+            collapsed_top: RefCell::new(None),
         });
         // SAFETY: `initWithStyle:` is `UISplitViewController`'s designated
         // initializer for a columnar split.
@@ -276,5 +293,12 @@ impl SplitController {
     /// collapsed)`.
     pub fn set_collapse_handler(&self, handler: impl Fn(isize, bool) + 'static) {
         self.ivars().collapse.replace(Some(Rc::new(handler)));
+    }
+
+    /// The column a collapsing split lands on: `Some` overrides the proposed
+    /// column in `topColumnForCollapsingToProposedTopColumn:`, `None` accepts
+    /// it.
+    pub fn set_collapsed_top_column(&self, column: Option<UISplitViewControllerColumn>) {
+        self.ivars().collapsed_top.replace(column);
     }
 }
