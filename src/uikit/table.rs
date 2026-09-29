@@ -577,6 +577,7 @@ pub struct TableCellIvars {
     constraints: RefCell<Vec<Retained<NSLayoutConstraint>>>,
     on_layout: RefCell<Option<TableCellHandler>>,
     on_activate: RefCell<Option<TableCellHandler>>,
+    payload: RefCell<Option<Box<dyn Any>>>,
 }
 
 impl fmt::Debug for TableCellIvars {
@@ -610,6 +611,14 @@ define_class!(
             if let Some(handler) = handler {
                 guarded("uikit::table::cell.on_layout", || handler(self));
             }
+        }
+
+        #[unsafe(method(prepareForReuse))]
+        fn prepare_for_reuse(&self) {
+            // SAFETY: the super implementation performs the system's reuse
+            // bookkeeping before the payload drops.
+            let _: () = unsafe { msg_send![super(self), prepareForReuse] };
+            self.ivars().payload.take();
         }
 
         #[unsafe(method(setSelected:animated:))]
@@ -692,6 +701,13 @@ impl TableCell {
     /// The mounted content view.
     pub fn content(&self) -> Option<Retained<UIView>> {
         self.ivars().content.borrow().clone()
+    }
+
+    /// Stores `value` in the cell; the previous payload is dropped — and
+    /// `prepareForReuse` drops it — so watchers the consumer stores here
+    /// release with the reuse.
+    pub fn set_payload(&self, value: Box<dyn Any>) {
+        *self.ivars().payload.borrow_mut() = Some(value);
     }
 
     /// Installs the hook `layoutSubviews` fires after the system layout —
