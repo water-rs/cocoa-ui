@@ -141,6 +141,31 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = [
     "objc2-core-video",
     "block2",
 ] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "dispatch2",
+    "objc2-core-media",
+    "objc2-core-foundation",
+    "objc2-quartz-core",
+    "AVAnimation",
+    "AVAsynchronousKeyValueLoading",
+    "AVAsset",
+    "AVAssetVariant",
+    "AVAudioProcessingSettings",
+    "AVError",
+    "AVMediaFormat",
+    "AVMediaSelectionGroup",
+    "AVPlayer",
+    "AVPlayerItem",
+    "AVPlayerLayer",
+    "AVTime",
+] }
+objc2-core-media = { version = "0.3", default-features = false, features = [
+    "std",
+    "CMTime",
+    "CMTimeRange",
+] }
 kurbo = { version = "0.12" }
 wgpu = { version = "29", default-features = false }
 wgpu-hal = { version = "29", default-features = false, features = [
@@ -154,6 +179,12 @@ tracing = "0.1"
 [target.'cfg(target_os = "macos")'.dependencies]
 bitflags = "2"
 mach2 = "0.7"
+objc2-av-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-app-kit",
+    "objc2-av-foundation",
+    "AVPlayerView",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-foundation",
