@@ -99,32 +99,6 @@ fn superview(view: &PlatformView) -> Option<Retained<PlatformView>> {
     view.superview()
 }
 
-/// Marks `view` an accessibility element carrying `label` — the spoken name
-/// assistive technology reads for it.
-///
-/// On macOS this also installs `label` as the view's tooltip.
-#[cfg(target_os = "macos")]
-pub fn set_accessibility_label(view: &PlatformView, label: &str) {
-    use objc2_app_kit::NSAccessibility;
-    use objc2_foundation::NSString;
-    let label = NSString::from_str(label);
-    view.setAccessibilityElement(true);
-    view.setAccessibilityLabel(Some(&label));
-    view.setToolTip(Some(&label));
-}
-
-/// Marks `view` an accessibility element carrying `label` — the spoken name
-/// assistive technology reads for it.
-#[cfg(target_os = "ios")]
-pub fn set_accessibility_label(view: &PlatformView, label: &str) {
-    use objc2_foundation::NSString;
-    use objc2_ui_kit::NSObjectUIAccessibility;
-    let mtm = objc2::MainThreadMarker::from(view);
-    let label = NSString::from_str(label);
-    view.setIsAccessibilityElement(true, mtm);
-    view.setAccessibilityLabel(Some(&label), mtm);
-}
-
 /// Removes `view` and everything inside it from the accessibility tree.
 #[cfg(target_os = "macos")]
 pub fn hide_from_accessibility(view: &PlatformView) {
@@ -190,23 +164,5 @@ pub fn set_accessibility_label(view: &PlatformView, label: &str) {
         let mtm = objc2::MainThreadMarker::from(view);
         view.setIsAccessibilityElement(true, mtm);
         view.setAccessibilityLabel(Some(&label), mtm);
-    }
-}
-
-/// Removes `view` and its whole subtree from the accessibility hierarchy:
-/// the chrome's own accessible element (say a button) then stands in for it.
-pub fn hide_from_accessibility(view: &PlatformView) {
-    #[cfg(target_os = "macos")]
-    {
-        use objc2_app_kit::NSAccessibility;
-        view.setAccessibilityElement(false);
-        // SAFETY: an ordinary main-thread `AppKit` accessibility setter;
-        // marked unsafe in the bindings.
-        unsafe { view.setAccessibilityChildren(Some(&objc2_foundation::NSArray::new())) };
-    }
-    #[cfg(target_os = "ios")]
-    {
-        use objc2_ui_kit::NSObjectUIAccessibility;
-        view.setAccessibilityElementsHidden(true, objc2::MainThreadMarker::from(view));
     }
 }

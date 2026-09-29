@@ -120,7 +120,11 @@ impl Window {
     /// `NSWindow.frameRect(forContentRect:styleMask:)` — the inverse of
     /// [`Self::content_rect_for_frame`].
     #[must_use]
-    pub fn frame_rect_for_content(mtm: MainThreadMarker, content: Rect, style: WindowStyle) -> Rect {
+    pub fn frame_rect_for_content(
+        mtm: MainThreadMarker,
+        content: Rect,
+        style: WindowStyle,
+    ) -> Rect {
         NSWindow::frameRectForContentRect_styleMask(content.into(), style.native(), mtm).into()
     }
 
