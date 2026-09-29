@@ -33,6 +33,7 @@
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::fmt;
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use objc2::rc::Retained;
@@ -41,14 +42,14 @@ use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::{
     NSBezelStyle, NSButton, NSColor, NSControlTextEditingDelegate, NSDragOperation, NSDraggingInfo,
-    NSLayoutConstraint, NSPasteboardItem, NSPasteboardType, NSPasteboardWriting, NSRectFill,
-    NSScrollView, NSTableColumn, NSTableRowView, NSTableView, NSTableViewDataSource,
-    NSTableViewDelegate, NSTableViewDropOperation, NSTableViewSelectionHighlightStyle,
-    NSTableViewStyle, NSView,
+    NSFont, NSLayoutConstraint, NSPasteboardItem, NSPasteboardType, NSPasteboardWriting, NSRectFill,
+    NSScrollView, NSTableColumn, NSTableRowView, NSTableView, NSTableViewAnimationOptions,
+    NSTableViewDataSource, NSTableViewDelegate, NSTableViewDropOperation,
+    NSTableViewSelectionHighlightStyle, NSTableViewStyle, NSTextField, NSView,
 };
 use objc2_foundation::{
-    NSArray, NSEdgeInsets, NSInteger, NSNotification, NSObjectProtocol, NSPoint, NSRect, NSSize,
-    NSString,
+    NSArray, NSEdgeInsets, NSIndexSet, NSInteger, NSMutableIndexSet, NSNotFound, NSNotification,
+    NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
 };
 
 use crate::callback::guarded;
@@ -724,5 +725,212 @@ impl RowContainer {
     #[must_use]
     pub fn content(&self) -> Option<Retained<NSView>> {
         self.ivars().content.borrow().as_ref().cloned()
+    }
+}
+
+fn index_set(indexes: &[usize]) -> Retained<NSIndexSet> {
+    let set = NSMutableIndexSet::new();
+    for &index in indexes {
+        set.addIndex(index);
+    }
+    set.into_super()
+}
+
+impl TableView {
+    /// Applies `deletes` and `inserts` as one update block — `.effectFade`
+    /// when `animated`, no animation otherwise.
+    pub fn apply_row_updates(&self, deletes: &[usize], inserts: &[usize], animated: bool) {
+        let animation = if animated {
+            NSTableViewAnimationOptions::EffectFade
+        } else {
+            NSTableViewAnimationOptions::EffectNone
+        };
+        let table = self.table_view();
+        table.beginUpdates();
+        table.removeRowsAtIndexes_withAnimation(&index_set(deletes), animation);
+        table.insertRowsAtIndexes_withAnimation(&index_set(inserts), animation);
+        table.endUpdates();
+    }
+
+    /// The flat row indexes `AppKit` reports selected, ascending.
+    #[must_use]
+    pub fn selected_rows(&self) -> Vec<usize> {
+        let indexes = self.table_view().selectedRowIndexes();
+        let mut rows = Vec::with_capacity(indexes.count());
+        let mut index = indexes.firstIndex();
+        while index != NSNotFound as usize {
+            rows.push(index);
+            index = indexes.indexGreaterThanIndex(index);
+        }
+        rows
+    }
+
+    /// Makes `rows` the selection: deselects each selected row not in it,
+    /// then extends the selection by it.
+    pub fn set_selected_rows(&self, rows: &[usize]) {
+        let table = self.table_view();
+        let wanted: std::collections::BTreeSet<usize> = rows.iter().copied().collect();
+        for row in self.selected_rows() {
+            if !wanted.contains(&row) {
+                table.deselectRow(row.cast_signed());
+            }
+        }
+        table.selectRowIndexes_byExtendingSelection(&index_set(rows), true);
+    }
+
+    /// Whether `row` is selected.
+    #[must_use]
+    pub fn is_row_selected(&self, row: usize) -> bool {
+        self.table_view().isRowSelected(row.cast_signed())
+    }
+
+    /// How many flat rows the table holds.
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        self.table_view().numberOfRows().cast_unsigned()
+    }
+
+    /// The frame `row` occupies in table coordinates.
+    #[must_use]
+    pub fn rect_of_row(&self, row: usize) -> NSRect {
+        self.table_view().rectOfRow(row.cast_signed())
+    }
+
+    /// Tells the table to re-ask heights for `rows`.
+    pub fn note_height_changed(&self, rows: std::ops::Range<usize>) {
+        let set = NSIndexSet::indexSetWithIndexesInRange(NSRange::new(
+            rows.start,
+            rows.len(),
+        ));
+        self.table_view().noteHeightOfRowsWithIndexesChanged(&set);
+    }
+
+    /// Scrolls `row`'s top edge to the clip's top, unanimated.
+    pub fn scroll_row_to_top(&self, row: usize) {
+        self.layoutSubtreeIfNeeded();
+        let top = self.rect_of_row(row).origin.y;
+        let clip = self.contentView();
+        clip.scrollToPoint(NSPoint::new(0.0, top));
+        self.reflectScrolledClipView(&clip);
+    }
+
+    /// Whether the scroll view is in a window.
+    #[must_use]
+    pub fn in_window(&self) -> bool {
+        self.window().is_some()
+    }
+
+    /// Runs `handler` once per row view currently materialized.
+    pub fn enumerate_row_views(&self, handler: impl Fn(&NSTableRowView) + 'static) {
+        let block = block2::RcBlock::new(
+            move |row_view: NonNull<NSTableRowView>, _index: NSInteger| {
+                // SAFETY: `AppKit` lends a live row view for the block's
+                // duration.
+                unsafe { handler(row_view.as_ref()) };
+            },
+        );
+        self.table_view()
+            .enumerateAvailableRowViewsUsingBlock(&block);
+    }
+}
+
+/// The per-instance state [`SectionHeader`] stores.
+#[derive(Default)]
+pub struct SectionHeaderIvars {
+    label: RefCell<Option<Retained<NSTextField>>>,
+    constraints: RefCell<Vec<Retained<NSLayoutConstraint>>>,
+    payload: RefCell<Option<Box<dyn Any>>>,
+}
+
+impl fmt::Debug for SectionHeaderIvars {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SectionHeaderIvars")
+            .field("label", &self.label.borrow().is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Which band a [`SectionHeader`] presents: a section's header or its
+/// footer — the choice changes the band's vertical margins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionKind {
+    /// The band above a section's rows.
+    Header,
+    /// The band below a section's rows.
+    Footer,
+}
+
+define_class!(
+    // SAFETY: `NSView`'s designated initializer is `initWithFrame:`, which
+    // `SectionHeader::new` calls, and the class does not implement `Drop`.
+    #[unsafe(super(NSView))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "CocoaUiTableSectionHeader"]
+    #[ivars = SectionHeaderIvars]
+    /// A section header/footer band: an `NSTextField` label pinned with the
+    /// margins a list section takes, styled by the consumer.
+    pub struct SectionHeader;
+);
+
+impl SectionHeader {
+    /// Creates an empty band; `kind` picks the top margin a header (14) or
+    /// footer (6) draws.
+    pub fn new(mtm: MainThreadMarker, kind: SectionKind) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(SectionHeaderIvars::default());
+        // SAFETY: `initWithFrame:` is `NSView`'s designated initializer.
+        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: NSRect::ZERO] };
+        this.setWantsLayer(true);
+        let label = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+        label.setTranslatesAutoresizingMaskIntoConstraints(false);
+        this.addSubview(&label);
+        let top = match kind {
+            SectionKind::Header => 14.0,
+            SectionKind::Footer => 6.0,
+        };
+        let constraints = vec![
+            label
+                .leadingAnchor()
+                .constraintEqualToAnchor_constant(&this.leadingAnchor(), 10.0),
+            label
+                .topAnchor()
+                .constraintEqualToAnchor_constant(&this.topAnchor(), top),
+            label
+                .trailingAnchor()
+                .constraintLessThanOrEqualToAnchor_constant(&this.trailingAnchor(), -16.0),
+            label
+                .bottomAnchor()
+                .constraintLessThanOrEqualToAnchor_constant(&this.bottomAnchor(), -6.0),
+        ];
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&constraints));
+        this.ivars().constraints.replace(constraints);
+        this.ivars().label.replace(Some(label));
+        this
+    }
+
+    /// Sets the band's text.
+    pub fn set_text(&self, text: &NSString) {
+        if let Some(label) = self.ivars().label.borrow().as_ref() {
+            label.setStringValue(text);
+        }
+    }
+
+    /// Sets the band's text color.
+    pub fn set_text_color(&self, color: &NSColor) {
+        if let Some(label) = self.ivars().label.borrow().as_ref() {
+            label.setTextColor(Some(color));
+        }
+    }
+
+    /// Sets the band's font.
+    pub fn set_font(&self, font: &NSFont) {
+        if let Some(label) = self.ivars().label.borrow().as_ref() {
+            label.setFont(Some(font));
+        }
+    }
+
+    /// Stores `value` in the view; the previous payload is dropped, so
+    /// watchers the consumer stores here release with the band.
+    pub fn set_payload(&self, value: Box<dyn Any>) {
+        *self.ivars().payload.borrow_mut() = Some(value);
     }
 }
