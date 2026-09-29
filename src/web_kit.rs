@@ -707,15 +707,22 @@ fn respond_to_scheme_task(task: &ProtocolObject<dyn WKURLSchemeTask>, handler: &
     let response = if served {
         let request = SchemeRequest {
             method,
-            path: url
-                .as_ref()
-                .and_then(|url| url.path())
-                .map(|path| path.to_string())
-                .unwrap_or_default(),
-            query: url
-                .as_ref()
-                .and_then(|url| url.query())
-                .map(|query| query.to_string()),
+            // `percentEncodedPath`/`percentEncodedQuery`: the dispatcher
+            // wants the raw URI components, not `path`'s decoded form.
+            // `objc2-foundation` does not bind the percent-encoded getters.
+            path: url.as_ref().map_or_else(
+                || String::from("/"),
+                |url| {
+                    let path: Option<Retained<NSString>> =
+                        unsafe { msg_send![&**url, percentEncodedPath] };
+                    path.map_or_else(|| String::from("/"), |path| path.to_string())
+                },
+            ),
+            query: url.as_ref().and_then(|url| {
+                let query: Option<Retained<NSString>> =
+                    unsafe { msg_send![&**url, percentEncodedQuery] };
+                query.map(|query| query.to_string())
+            }),
         };
         (handler.respond)(&request)
     } else {
@@ -1119,6 +1126,19 @@ impl WebViewController {
         &self.view
     }
 
+    /// Navigates to `url`.
+    ///
+    /// # Panics
+    ///
+    /// When `url` is not a URL Foundation can parse.
+    pub fn load_url(&self, url: &str) {
+        let url = NSURL::URLWithString(&NSString::from_str(url))
+            .expect("WebView received an invalid URL");
+        // SAFETY: `url` is a live `NSURL`.
+        let request = NSURLRequest::requestWithURL(&url);
+        self.load_request(&request);
+    }
+
     /// Loads `request`.
     pub fn load_request(&self, request: &NSURLRequest) {
         self.view.load_request(request);
@@ -1392,6 +1412,18 @@ impl Drop for WebViewController {
             self.view.set_ui_delegate(None);
         }
     }
+}
+
+/// Resolves a `Location` header value against the response URL it arrived
+/// with — `URL(string:relativeTo:)` semantics, so a relative header is
+/// rooted at the response and an unparseable one passes through unchanged.
+#[must_use]
+pub fn resolve_redirect(base: &str, location: &str) -> String {
+    let base = NSURL::URLWithString(&NSString::from_str(base));
+    NSURL::URLWithString_relativeToURL(&NSString::from_str(location), base.as_deref())
+        .and_then(|url| url.absoluteString())
+        .map(|url| url.to_string())
+        .unwrap_or_else(|| location.to_string())
 }
 
 /// Evaluates a server trust reference — `SecTrustEvaluateWithError`.
