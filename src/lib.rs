@@ -109,6 +109,7 @@ pub use color_scheme::ColorScheme;
 pub use font::Font;
 pub use geometry::{EdgeInsets, Point, Rect, Size};
 pub use image::{Image, ScaleMode};
+pub use objc2;
 pub use objc2::MainThreadMarker;
 pub use objc2::rc::Retained;
 pub use system_font::{FontMetrics, TextStyle};
