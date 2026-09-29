@@ -235,6 +235,7 @@ impl NavContentController {
                 }
             });
             controller.setSearchResultsUpdater(Some(ProtocolObject::from_ref(&*updater)));
+            item.setPreferredSearchBarPlacement(search.placement.native());
             item.setSearchController(Some(&controller));
             // `searchResultsUpdater` is a weak outlet — the controller keeps
             // the updater and drawer alive for the page's life.
@@ -374,14 +375,36 @@ impl LargeTitle {
     }
 }
 
-/// A page's search drawer: the field's placeholder and its text at install
-/// time.
+/// Where the navigation bar places the page's search field —
+/// `UINavigationItemSearchBarPlacement`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SearchBarPlacement {
+    /// The platform chooses — `.automatic`.
+    #[default]
+    Automatic,
+    /// Stacked below the bar's other content — `.stacked`.
+    Stacked,
+}
+
+impl SearchBarPlacement {
+    const fn native(self) -> objc2_ui_kit::UINavigationItemSearchBarPlacement {
+        match self {
+            Self::Automatic => objc2_ui_kit::UINavigationItemSearchBarPlacement::Automatic,
+            Self::Stacked => objc2_ui_kit::UINavigationItemSearchBarPlacement::Stacked,
+        }
+    }
+}
+
+/// A page's search drawer: the field's placeholder, its text at install
+/// time, and where the field sits in the bar.
 #[derive(Debug, Default)]
 pub struct NavSearch {
     /// The placeholder text.
     pub placeholder: String,
     /// The text the field starts with — the binding's current value.
     pub text: String,
+    /// The field's placement in the bar — `preferredSearchBarPlacement`.
+    pub placement: SearchBarPlacement,
 }
 
 /// One page's navigation-bar chrome.
