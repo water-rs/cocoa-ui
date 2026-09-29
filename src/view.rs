@@ -62,6 +62,12 @@ pub fn set_hidden(view: &PlatformView, hidden: bool) {
     view.setHidden(hidden);
 }
 
+/// Whether `view` is inside a window's hierarchy right now.
+#[must_use]
+pub fn has_window(view: &PlatformView) -> bool {
+    view.window().is_some()
+}
+
 /// Tells `view` and every ancestor that its size may have changed.
 ///
 /// Invalidates intrinsic content size and marks each for layout. Call from a

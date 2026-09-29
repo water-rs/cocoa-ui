@@ -51,6 +51,8 @@ pub use label::Label;
 mod slider;
 pub mod text_field;
 pub use slider::Slider;
+mod progress;
+pub use progress::Progress;
 mod stepper;
 pub use stepper::Stepper;
 pub use text_field::{SecureField, TextField};
