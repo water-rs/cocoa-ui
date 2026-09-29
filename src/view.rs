@@ -10,6 +10,7 @@
 //! main-thread calls.
 
 use objc2::rc::Retained;
+use objc2_foundation::NSObjectProtocol;
 
 use crate::PlatformView;
 use crate::geometry::Rect;
