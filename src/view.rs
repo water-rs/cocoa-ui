@@ -172,3 +172,40 @@ pub fn set_accessibility_label(view: &PlatformView, label: &str) {
         view.setAccessibilityLabel(Some(&label), mtm);
     }
 }
+
+/// Whether `view` sizes itself by its frame rather than by Auto Layout
+/// constraints — `true` for views a layout container positions manually.
+pub fn set_translates_autoresizing(view: &PlatformView, enabled: bool) {
+    view.setTranslatesAutoresizingMaskIntoConstraints(enabled);
+}
+
+/// Makes `parent`'s subviews exactly `ordered`, in that z-order, reusing the
+/// subview instances already attached.
+#[cfg(target_os = "macos")]
+pub fn reconcile_subviews(parent: &PlatformView, ordered: &[Retained<PlatformView>]) {
+    use objc2_foundation::NSArray;
+    parent.setSubviews(&NSArray::from_retained_slice(ordered));
+}
+
+/// Makes `parent`'s subviews exactly `ordered`, in that z-order, reusing the
+/// subview instances already attached.
+#[cfg(target_os = "ios")]
+pub fn reconcile_subviews(parent: &PlatformView, ordered: &[Retained<PlatformView>]) {
+    use std::ptr;
+
+    for subview in parent.subviews().to_vec() {
+        if !ordered
+            .iter()
+            .any(|wanted| ptr::eq(&raw const **wanted, &raw const *subview))
+        {
+            subview.removeFromSuperview();
+        }
+    }
+    for (index, child) in ordered.iter().enumerate() {
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "a view hierarchy never reaches `NSInteger::MAX` subviews"
+        )]
+        parent.insertSubview_atIndex(child, index as isize);
+    }
+}

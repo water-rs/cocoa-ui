@@ -85,3 +85,101 @@ pub fn cross_dissolve(view: &objc2_ui_kit::UIView, duration: f64, body: impl FnO
         None,
     );
 }
+
+/// A timing curve [`animate_with`] plays `body`'s animatable changes under.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Timing {
+    /// A cubic-bezier timing curve over `duration` seconds.
+    Bezier {
+        /// Seconds the animation runs.
+        duration: f64,
+        /// The curve's two control points, `[x1, y1, x2, y2]`.
+        control_points: [f32; 4],
+    },
+    /// A physically driven spring.
+    Spring {
+        /// Spring stiffness.
+        stiffness: f64,
+        /// Spring damping.
+        damping: f64,
+    },
+}
+
+/// Runs `body` while `timing` plays its animatable changes: a
+/// `UIViewPropertyAnimator` on iOS, an `NSAnimationContext` group on macOS.
+#[cfg(target_os = "ios")]
+pub fn animate_with(timing: Timing, body: impl FnOnce() + 'static) {
+    use objc2::MainThreadOnly;
+    use objc2::rc::Retained;
+    use objc2::runtime::ProtocolObject;
+    use objc2_core_foundation::{CGPoint, CGVector};
+    use objc2_ui_kit::{
+        UICubicTimingParameters, UISpringTimingParameters, UITimingCurveProvider, UIViewAnimating,
+        UIViewPropertyAnimator,
+    };
+    use std::cell::RefCell;
+
+    let mtm = objc2::MainThreadMarker::new().expect("animation runs on the main thread");
+    // `addAnimations` may evaluate its block once only; the option still
+    // guards a double evaluation.
+    let body = RefCell::new(Some(body));
+    let block = block2::RcBlock::new(move || {
+        if let Some(body) = body.borrow_mut().take() {
+            body();
+        }
+    });
+    let (duration, parameters): (f64, Retained<ProtocolObject<dyn UITimingCurveProvider>>) =
+        match timing {
+            Timing::Bezier {
+                duration,
+                control_points: [x1, y1, x2, y2],
+            } => (
+                duration,
+                ProtocolObject::from_retained(
+                    UICubicTimingParameters::initWithControlPoint1_controlPoint2(
+                        UICubicTimingParameters::alloc(mtm),
+                        CGPoint::new(f64::from(x1), f64::from(y1)),
+                        CGPoint::new(f64::from(x2), f64::from(y2)),
+                    ),
+                ),
+            ),
+            Timing::Spring { stiffness, damping } => (
+                0.0,
+                ProtocolObject::from_retained(
+                    UISpringTimingParameters::initWithMass_stiffness_damping_initialVelocity(
+                        UISpringTimingParameters::alloc(mtm),
+                        1.0,
+                        stiffness,
+                        damping,
+                        CGVector::new(0.0, 0.0),
+                    ),
+                ),
+            ),
+        };
+    let animator = UIViewPropertyAnimator::initWithDuration_timingParameters(
+        UIViewPropertyAnimator::alloc(mtm),
+        duration,
+        &parameters,
+    );
+    animator.addAnimations(&block);
+    animator.startAnimation();
+}
+
+/// Runs `body` while `timing` plays its animatable changes.
+///
+/// A spring has no authored duration in `UIKit`; `NSAnimationContext` wants
+/// one, so it is estimated from the stiffness and damping and clamped the
+/// way the framework consumer's spring timing expects.
+#[cfg(target_os = "macos")]
+pub fn animate_with(timing: Timing, body: impl FnOnce() + 'static) {
+    match timing {
+        Timing::Bezier {
+            duration,
+            control_points,
+        } => animate(duration, Some(control_points), body),
+        Timing::Spring { stiffness, damping } => {
+            let estimated = 2.0 * (1.0 / stiffness).sqrt() * damping;
+            animate(estimated.clamp(0.1, 2.0), None, body);
+        }
+    }
+}

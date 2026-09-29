@@ -15,10 +15,10 @@ use std::rc::Rc;
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSScreen, NSView};
-use objc2_foundation::{NSEdgeInsets, NSObjectProtocol, NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSArray, NSEdgeInsets, NSObjectProtocol, NSPoint, NSRect, NSSize};
 
 use crate::callback::guarded;
-use crate::geometry::{EdgeInsets, Point, Rect, Size};
+use crate::geometry::{EdgeInsets, MeasureProposal, Point, Rect, Size};
 
 /// What a [`HostView`]'s hit-test handler decides for a point.
 #[derive(Debug, Clone)]
@@ -28,6 +28,9 @@ pub enum HitTest {
     Default,
     /// Nothing here: the event goes to whatever lies beneath the host view.
     Pass,
+    /// Whatever `AppKit` would decide, except the host view itself: a
+    /// container's own hits belong to whatever lies beneath it.
+    PassIfSelf,
     /// This view receives the event.
     View(Retained<NSView>),
 }
@@ -36,6 +39,9 @@ type LayoutHandler = Rc<dyn Fn(&HostView)>;
 type ResizeHandler = Rc<dyn Fn(&HostView, Size)>;
 type HitTestHandler = Rc<dyn Fn(&HostView, Point) -> HitTest>;
 type WindowHandler = Rc<dyn Fn(&HostView)>;
+type MeasureHandler = Rc<dyn Fn(&HostView, MeasureProposal) -> Size>;
+type PrimaryContentHandler = Rc<dyn Fn(&HostView) -> Option<Retained<NSView>>>;
+type ScrollSurfaceHandler = Rc<dyn Fn(&HostView) -> Vec<Retained<NSView>>>;
 
 /// The handlers a [`HostView`] calls.
 #[derive(Default)]
@@ -44,6 +50,18 @@ pub struct HostViewIvars {
     resize: RefCell<Option<ResizeHandler>>,
     hit_test: RefCell<Option<HitTestHandler>>,
     window: RefCell<Option<WindowHandler>>,
+    superview: RefCell<Option<WindowHandler>>,
+    measure: RefCell<Option<MeasureHandler>>,
+    primary_content: RefCell<Option<PrimaryContentHandler>>,
+    scroll_surface_candidates: RefCell<Option<ScrollSurfaceHandler>>,
+    /// Whether the view's own content is laid out against its bounds — the
+    /// answer to "does this view manage its own safe area".
+    manages_safe_area: std::cell::Cell<bool>,
+    /// Whether the Auto Layout width is tracked for intrinsic size; see
+    /// [`set_intrinsic_auto_layout`](HostView::set_intrinsic_auto_layout).
+    intrinsic_auto_layout: std::cell::Cell<bool>,
+    /// The width the intrinsic-content-size query was last invalidated for.
+    last_auto_layout_width: std::cell::Cell<f64>,
 }
 
 impl fmt::Debug for HostViewIvars {
@@ -53,6 +71,16 @@ impl fmt::Debug for HostViewIvars {
             .field("resize", &self.resize.borrow().is_some())
             .field("hit_test", &self.hit_test.borrow().is_some())
             .field("window", &self.window.borrow().is_some())
+            .field("superview", &self.superview.borrow().is_some())
+            .field(
+                "scroll_surface_candidates",
+                &self.scroll_surface_candidates.borrow().is_some(),
+            )
+            .field("primary_content", &self.primary_content.borrow().is_some())
+            .field("last_auto_layout_width", &self.last_auto_layout_width.get())
+            .field("measure", &self.measure.borrow().is_some())
+            .field("manages_safe_area", &self.manages_safe_area.get())
+            .field("intrinsic_auto_layout", &self.intrinsic_auto_layout.get())
             .finish()
     }
 }
@@ -94,7 +122,82 @@ define_class!(
                 if let Some(handler) = handler {
                     handler(self);
                 }
+                self.track_intrinsic_width();
             });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(viewDidMoveToSuperview))]
+        fn view_did_move_to_superview_override(&self) {
+            guarded("HostView viewDidMoveToSuperview", || {
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), viewDidMoveToSuperview] };
+                let handler = self.ivars().superview.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self);
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(fittingSize))]
+        fn fitting_size_override(&self) -> NSSize {
+            guarded("HostView fittingSize", || {
+                if let Some(handler) = self.ivars().measure.borrow().clone() {
+                    return handler(self, MeasureProposal::UNBOUNDED).into();
+                }
+                // SAFETY: see the module safety note.
+                unsafe { msg_send![super(self), fittingSize] }
+            })
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(intrinsicContentSize))]
+        fn intrinsic_content_size_override(&self) -> NSSize {
+            guarded("HostView intrinsicContentSize", || {
+                if let Some(handler) = self.ivars().measure.borrow().clone() {
+                    let intrinsic = handler(self, MeasureProposal::UNBOUNDED);
+                    // Under Auto Layout the width is the parent's constraint,
+                    // so the intrinsic height must be measured against it.
+                    if self.ivars().intrinsic_auto_layout.get()
+                        && !self.translatesAutoresizingMaskIntoConstraints()
+                        && self.bounds().size.width > 0.0
+                    {
+                        let constrained = handler(
+                            self,
+                            MeasureProposal::width(self.bounds().size.width),
+                        );
+                        return NSSize::new(intrinsic.width, constrained.height);
+                    }
+                    return intrinsic.into();
+                }
+                // SAFETY: see the module safety note.
+                unsafe { msg_send![super(self), intrinsicContentSize] }
+            })
+        }
+
+        // SAFETY: see the module safety note. Exposed under a `cocoaUi`
+        // selector for the sibling backend's safe-area rules; it reads an
+        // ivar and performs no layout.
+        #[unsafe(method(cocoaUiManagesSafeArea))]
+        fn manages_safe_area_override(&self) -> bool {
+            self.ivars().manages_safe_area.get()
+        }
+
+        // SAFETY: see the module safety note. Exposed under a `cocoaUi`
+        // selector for the sibling backend's primary-content chain.
+        #[unsafe(method_id(cocoaUiPrimaryContent))]
+        fn primary_content_override(&self) -> Option<Retained<NSView>> {
+            let handler = self.ivars().primary_content.borrow().clone();
+            handler.and_then(|handler| handler(self))
+        }
+
+        // SAFETY: see the module safety note. Exposed under a `cocoaUi`
+        // selector for the sibling backend's scroll-surface search.
+        #[unsafe(method_id(cocoaUiScrollSurfaceCandidates))]
+        fn scroll_surface_candidates_override(&self) -> Retained<NSArray<NSView>> {
+            let handler = self.ivars().scroll_surface_candidates.borrow().clone();
+            NSArray::from_retained_slice(&handler.map_or_else(Vec::new, |handler| handler(self)))
         }
 
         // SAFETY: see the module safety note.
@@ -136,6 +239,13 @@ define_class!(
                     // SAFETY: see the module safety note.
                     HitTest::Default => unsafe { msg_send![super(self), hitTest: point] },
                     HitTest::Pass => None,
+                    HitTest::PassIfSelf => {
+                        let this: &NSView = self;
+                        // SAFETY: see the module safety note.
+                        let hit: Option<Retained<NSView>> =
+                            unsafe { msg_send![super(self), hitTest: point] };
+                        hit.filter(|hit| !ptr::eq(&raw const **hit, this))
+                    }
                     HitTest::View(view) => Some(view),
                 }
             })
@@ -181,6 +291,59 @@ impl HostView {
     /// possible or is lost.
     pub fn set_window_handler(&self, handler: impl Fn(&Self) + 'static) {
         self.ivars().window.replace(Some(Rc::new(handler)));
+    }
+
+    /// Calls `handler` every time the view moves into or out of a superview —
+    /// `viewDidMoveToSuperview`, the point where an enclosing scroll surface
+    /// may have changed.
+    pub fn set_superview_handler(&self, handler: impl Fn(&Self) + 'static) {
+        self.ivars().superview.replace(Some(Rc::new(handler)));
+    }
+
+    /// Lets `handler` answer the view's intrinsic measurements,
+    /// `fittingSize` and `intrinsicContentSize`, for a layout container.
+    pub fn set_measure_handler(&self, handler: impl Fn(&Self, MeasureProposal) -> Size + 'static) {
+        self.ivars().measure.replace(Some(Rc::new(handler)));
+    }
+
+    /// Whether the intrinsic content size reports the height the current
+    /// Auto Layout width produces.
+    ///
+    /// When enabled and the view is parented under Auto Layout
+    /// (`translatesAutoresizingMaskIntoConstraints` is off),
+    /// `intrinsicContentSize` re-measures at the bounds width so wrapped
+    /// content can grow vertically, and a width change during layout
+    /// invalidates the intrinsic size so the constraint system re-queries.
+    pub fn set_intrinsic_auto_layout(&self, enabled: bool) {
+        self.ivars().intrinsic_auto_layout.set(enabled);
+    }
+
+    /// Whether the view manages its own safe area — the answer
+    /// `wuiHandlesSafeArea` in the sibling backend reads, through the
+    /// `cocoaUiManagesSafeArea` selector.
+    pub fn set_manages_safe_area(&self, manages: bool) {
+        self.ivars().manages_safe_area.set(manages);
+    }
+
+    /// The primary content the sibling backend's wrappers descend to — the
+    /// answer `cocoaUiPrimaryContent` reports, and the link a scroll-surface
+    /// or safe-area query follows into the view.
+    pub fn set_primary_content_handler(
+        &self,
+        handler: impl Fn(&Self) -> Option<Retained<NSView>> + 'static,
+    ) {
+        self.ivars().primary_content.replace(Some(Rc::new(handler)));
+    }
+
+    /// The children that may be the scroll surface surrounding bars follow —
+    /// the answer `cocoaUiScrollSurfaceCandidates` reports.
+    pub fn set_scroll_surface_handler(
+        &self,
+        handler: impl Fn(&Self) -> Vec<Retained<NSView>> + 'static,
+    ) {
+        self.ivars()
+            .scroll_surface_candidates
+            .replace(Some(Rc::new(handler)));
     }
 
     /// Adds `view` above the existing subviews.
@@ -230,6 +393,25 @@ impl HostView {
             || NSScreen::mainScreen(self.mtm()).map(|screen| screen.backingScaleFactor()),
             |window| Some(window.backingScaleFactor()),
         )
+    }
+
+    /// When intrinsic size is tracked under Auto Layout, records the
+    /// current width and invalidates it when the width changed.
+    fn track_intrinsic_width(&self) {
+        let ivars = self.ivars();
+        if !ivars.intrinsic_auto_layout.get()
+            || ivars.measure.borrow().is_none()
+            || self.translatesAutoresizingMaskIntoConstraints()
+        {
+            return;
+        }
+        let width = self.bounds().size.width;
+        if width > 0.0 {
+            let previous = ivars.last_auto_layout_width.replace(width);
+            if (previous - width).abs() > 0.0 {
+                self.invalidateIntrinsicContentSize();
+            }
+        }
     }
 
     /// The distances from each edge within which content is obscured by the

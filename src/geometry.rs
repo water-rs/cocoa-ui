@@ -68,6 +68,42 @@ impl Rect {
     }
 }
 
+/// A size suggestion handed to a view's measure handler: each axis is either
+/// a bound it must fit inside or `None`, meaning unconstrained.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct MeasureProposal {
+    /// The horizontal bound, or `None` for unconstrained.
+    pub width: Option<f64>,
+    /// The vertical bound, or `None` for unconstrained.
+    pub height: Option<f64>,
+}
+
+impl MeasureProposal {
+    /// Every axis bounded by `size`.
+    #[must_use]
+    pub const fn fitted(size: Size) -> Self {
+        Self {
+            width: Some(size.width),
+            height: Some(size.height),
+        }
+    }
+
+    /// Only the width bounded.
+    #[must_use]
+    pub const fn width(width: f64) -> Self {
+        Self {
+            width: Some(width),
+            height: None,
+        }
+    }
+
+    /// No axis bounded.
+    pub const UNBOUNDED: Self = Self {
+        width: None,
+        height: None,
+    };
+}
+
 /// Distances inward from each edge of a rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct EdgeInsets {
@@ -118,6 +154,77 @@ impl From<CGSize> for Size {
 impl From<Size> for CGSize {
     fn from(size: Size) -> Self {
         Self::new(size.width, size.height)
+    }
+}
+
+impl Rect {
+    /// Whether every component is finite and the size is non-negative — a
+    /// rectangle a layout engine's answer can safely become a frame.
+    #[must_use]
+    pub fn is_valid_for_layout(self) -> bool {
+        self.origin.x.is_finite()
+            && self.origin.y.is_finite()
+            && self.size.width.is_finite()
+            && self.size.height.is_finite()
+            && self.size.width >= 0.0
+            && self.size.height >= 0.0
+    }
+
+    /// `self` snapped to a `scale`-times pixel grid.
+    ///
+    /// The origin snaps to its nearest pixel. A size that is already a whole
+    /// number of pixels — within `1e-3`, absorbing the noise of
+    /// `points * scale` on a value produced by dividing a whole pixel count
+    /// by the same scale — keeps that count exactly; any other size falls
+    /// out of the far edge's own snap, so siblings that shared an edge in a
+    /// fractional layout answer keep sharing a pixel.
+    #[must_use]
+    pub fn pixel_snapped(self, scale: f64) -> Self {
+        fn snapped_edge(origin: f64, extent: f64, scale: f64) -> (f64, f64) {
+            let snap = |points: f64| (points * scale).round() / scale;
+            let snapped_origin = snap(origin);
+            let raw = extent * scale;
+            let nearest = raw.round();
+            if (raw - nearest).abs() < 1e-3 {
+                return (snapped_origin, nearest / scale);
+            }
+            (snapped_origin, snap(origin + extent) - snapped_origin)
+        }
+        let (x, width) = snapped_edge(self.origin.x, self.size.width, scale);
+        let (y, height) = snapped_edge(self.origin.y, self.size.height, scale);
+        Self::new(x, y, width, height)
+    }
+
+    /// `self` grown to `chrome` on every edge where it touches `within`,
+    /// within a half point.
+    ///
+    /// A content rect inset by a safe area: a child laid out inside `within`
+    /// that manages its own obscured edges is extended through `within` to
+    /// `chrome` on the edges it touches.
+    #[must_use]
+    pub fn extended_through(self, within: Self, chrome: Self) -> Self {
+        let mut result = self;
+        let (min_x, max_x) = (self.origin.x, self.origin.x + self.size.width);
+        let (min_y, max_y) = (self.origin.y, self.origin.y + self.size.height);
+        let (safe_min_x, safe_max_x) = (within.origin.x, within.origin.x + within.size.width);
+        let (safe_min_y, safe_max_y) = (within.origin.y, within.origin.y + within.size.height);
+        let (chrome_min_x, chrome_max_x) = (chrome.origin.x, chrome.origin.x + chrome.size.width);
+        let (chrome_min_y, chrome_max_y) = (chrome.origin.y, chrome.origin.y + chrome.size.height);
+        if (min_x - safe_min_x).abs() < 0.5 {
+            result.origin.x = chrome_min_x;
+            result.size.width += min_x - chrome_min_x;
+        }
+        if (max_x - safe_max_x).abs() < 0.5 {
+            result.size.width += chrome_max_x - max_x;
+        }
+        if (min_y - safe_min_y).abs() < 0.5 {
+            result.origin.y = chrome_min_y;
+            result.size.height += min_y - chrome_min_y;
+        }
+        if (max_y - safe_max_y).abs() < 0.5 {
+            result.size.height += chrome_max_y - max_y;
+        }
+        result
     }
 }
 

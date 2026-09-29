@@ -72,6 +72,7 @@ pub mod notification;
 pub mod picker;
 pub mod process;
 pub mod progress;
+pub mod scroll;
 pub mod slider;
 pub mod system_font;
 pub mod text;
