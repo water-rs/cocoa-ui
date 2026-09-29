@@ -13,7 +13,7 @@ use objc2::rc::Retained;
 use objc2_foundation::NSObjectProtocol;
 
 use crate::PlatformView;
-use crate::geometry::Rect;
+use crate::geometry::{Point, Rect};
 
 /// A +1 reference to `view` as its base class: any `NSView`/`UIView`
 /// subclass, including the kit's own classes.
@@ -22,6 +22,24 @@ use crate::geometry::Rect;
 ///
 /// # Panics
 ///
+/// The view's immediate subviews, in back-to-front order.
+#[must_use]
+pub fn subviews(view: &PlatformView) -> Vec<Retained<PlatformView>> {
+    view.subviews().to_vec()
+}
+
+/// The view's Objective-C class name.
+#[must_use]
+pub fn class_name(view: &PlatformView) -> &'static str {
+    view.class().name().to_str().unwrap_or_default()
+}
+
+/// Converts `point` from `view`'s coordinate space into `to`'s.
+#[must_use]
+pub fn convert_point(view: &PlatformView, point: Point, to: &PlatformView) -> Point {
+    view.convertPoint_toView(point.into(), Some(to)).into()
+}
+
 /// `view` retains to a non-null object; unreachable for a live view.
 #[must_use]
 pub fn retain_base<V: AsRef<PlatformView> + ?Sized>(view: &V) -> Retained<PlatformView> {
