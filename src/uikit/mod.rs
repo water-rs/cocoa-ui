@@ -85,4 +85,4 @@ pub use stepper::Stepper;
 pub use tabs::{TabContentController, TabSpec, TabsController};
 pub use text_field::{SecureField, TextField};
 pub use view_controller::ViewController;
-pub use window::Window;
+pub use window::{Window, window_of};

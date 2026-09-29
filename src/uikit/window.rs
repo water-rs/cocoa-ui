@@ -2,7 +2,7 @@
 
 use objc2::MainThreadOnly;
 use objc2::rc::Retained;
-use objc2_ui_kit::{UIViewController, UIWindow};
+use objc2_ui_kit::{UIView, UIViewController, UIWindow};
 
 use super::application::WindowScene;
 
@@ -40,4 +40,10 @@ impl Window {
     pub(super) fn into_native(self) -> Retained<UIWindow> {
         self.window
     }
+}
+
+/// The window `view` currently lives in, if any.
+#[must_use]
+pub fn window_of(view: &UIView) -> Option<Retained<UIWindow>> {
+    view.window()
 }

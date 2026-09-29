@@ -42,9 +42,11 @@ pub mod colors;
 mod control;
 mod date_picker;
 mod effect_view;
+pub mod event;
 mod host_view;
 pub mod image;
 mod menu;
+mod panel;
 mod popup_button;
 mod search_field;
 mod segmented;
@@ -76,6 +78,10 @@ pub use label::Label;
 mod slider;
 pub use crate::menu::{Command, KeyModifiers, MenuTreeNode};
 pub use menu::{Menu, MenuAction, MenuButton, MenuItem};
+pub use panel::{
+    Panel, content_bounds, convert_to_screen, did_resize_notification,
+    view_frame_did_change_notification, window_of,
+};
 pub use slider::Slider;
 mod progress;
 pub use progress::Progress;
