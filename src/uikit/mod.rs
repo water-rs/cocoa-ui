@@ -46,6 +46,7 @@ pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
 pub use image::ImageView;
 pub mod label;
+pub mod toggle;
 pub use label::Label;
 pub use view_controller::ViewController;
 pub use window::Window;

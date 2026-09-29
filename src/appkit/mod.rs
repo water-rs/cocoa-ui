@@ -48,6 +48,7 @@ pub use colors::AppColor;
 pub use host_view::{HitTest, HostView};
 pub use image::ImageView;
 pub mod label;
+pub mod toggle;
 pub use label::Label;
 pub use menu::{KeyModifiers, Menu, MenuAction, MenuItem};
 pub use view_controller::ViewController;
