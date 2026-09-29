@@ -163,7 +163,7 @@ define_class!(
     // SAFETY: `NSScrollView`'s designated initializer is `initWithFrame:`,
     // which `TableView::new` calls, and the class does not implement `Drop`.
     #[unsafe(super(NSScrollView))]
-    #[name = "CocoaUiTableView"]
+    #[name = "CocoaUiListTableView"]
     #[thread_kind = MainThreadOnly]
     #[ivars = TableViewIvars]
     /// A scroll view hosting a single-column `NSTableView` that sources its
