@@ -415,3 +415,39 @@ pub fn reconcile_subviews(parent: &PlatformView, ordered: &[Retained<PlatformVie
         parent.insertSubview_atIndex(child, index as isize);
     }
 }
+
+/// Pins `child`'s leading, trailing, top, and bottom edges to `parent`'s
+/// with four equal-to-anchor constraints.
+///
+/// The caller is responsible for installing `child` as a subview of
+/// `parent` first.
+pub fn pin_edges(
+    #[cfg_attr(target_os = "macos", allow(unused_variables))] mtm: crate::MainThreadMarker,
+    parent: &PlatformView,
+    child: &PlatformView,
+) {
+    #[cfg(target_os = "macos")]
+    use objc2_app_kit::NSLayoutConstraint;
+    use objc2_foundation::NSArray;
+    #[cfg(target_os = "ios")]
+    use objc2_ui_kit::NSLayoutConstraint;
+
+    let constraints = NSArray::from_retained_slice(&[
+        child
+            .leadingAnchor()
+            .constraintEqualToAnchor(&parent.leadingAnchor()),
+        child
+            .trailingAnchor()
+            .constraintEqualToAnchor(&parent.trailingAnchor()),
+        child
+            .topAnchor()
+            .constraintEqualToAnchor(&parent.topAnchor()),
+        child
+            .bottomAnchor()
+            .constraintEqualToAnchor(&parent.bottomAnchor()),
+    ]);
+    #[cfg(target_os = "macos")]
+    NSLayoutConstraint::activateConstraints(&constraints);
+    #[cfg(target_os = "ios")]
+    NSLayoutConstraint::activateConstraints(&constraints, mtm);
+}
