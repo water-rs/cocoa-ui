@@ -68,6 +68,7 @@ pub mod log;
 pub mod main_queue;
 pub mod notification;
 pub mod process;
+pub mod slider;
 pub mod system_font;
 pub mod text;
 #[cfg(target_os = "ios")]

@@ -50,6 +50,8 @@ pub use image::ImageView;
 pub mod label;
 pub mod toggle;
 pub use label::Label;
+mod slider;
 pub use menu::{KeyModifiers, Menu, MenuAction, MenuItem};
+pub use slider::Slider;
 pub use view_controller::ViewController;
 pub use window::{Window, WindowStyle};

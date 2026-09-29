@@ -12,6 +12,38 @@ pub fn flush_transaction() {
     CATransaction::flush();
 }
 
+/// Runs `body` inside an `NSAnimationContext` group.
+///
+/// Animatable property changes `body` makes animate over `duration` seconds
+/// and, when `control_points` is given, the cubic timing function they
+/// describe.
+#[cfg(target_os = "macos")]
+pub fn animate(duration: f64, control_points: Option<[f32; 4]>, body: impl FnOnce() + 'static) {
+    use std::cell::RefCell;
+    use std::ptr::NonNull;
+
+    use objc2_app_kit::NSAnimationContext;
+    use objc2_quartz_core::CAMediaTimingFunction;
+
+    // The changes block is `Fn`, and `NSAnimationContext` may evaluate it
+    // once only; the option still guards a double evaluation.
+    let body = RefCell::new(Some(body));
+    let block = block2::RcBlock::new(move |context: NonNull<NSAnimationContext>| {
+        // SAFETY: the group passes a live context for the block's duration.
+        let context = unsafe { context.as_ref() };
+        context.setDuration(duration);
+        context.setAllowsImplicitAnimation(true);
+        if let Some([x1, y1, x2, y2]) = control_points {
+            let timing = CAMediaTimingFunction::functionWithControlPoints(x1, y1, x2, y2);
+            context.setTimingFunction(Some(&timing));
+        }
+        if let Some(body) = body.borrow_mut().take() {
+            body();
+        }
+    });
+    NSAnimationContext::runAnimationGroup(&block);
+}
+
 /// Runs `body` while a cross-fade of `duration` seconds plays on `view`'s
 /// layer: the view's new content dissolves in over the old.
 #[cfg(target_os = "macos")]
