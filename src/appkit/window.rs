@@ -116,6 +116,14 @@ impl Window {
         NSWindow::contentRectForFrameRect_styleMask(frame.into(), style.native(), mtm).into()
     }
 
+    /// The frame a window with content rect `content` in `style` would carry —
+    /// `NSWindow.frameRect(forContentRect:styleMask:)` — the inverse of
+    /// [`Self::content_rect_for_frame`].
+    #[must_use]
+    pub fn frame_rect_for_content(mtm: MainThreadMarker, content: Rect, style: WindowStyle) -> Rect {
+        NSWindow::frameRectForContentRect_styleMask(content.into(), style.native(), mtm).into()
+    }
+
     /// Reveals the window's contents: fades `alphaValue` to opaque over
     /// `duration` seconds with ease-out timing, the way a fresh window first
     /// appears.
@@ -178,6 +186,13 @@ impl Window {
     pub fn set_frame(&self, frame: Rect, animate: bool) {
         self.window
             .setFrame_display_animate(frame.into(), true, animate);
+    }
+
+    /// Moves and resizes the window so its content area becomes `content`,
+    /// in screen coordinates. `animate` asks the system to tween the change.
+    pub fn set_content_rect(&self, content: Rect, animate: bool) {
+        let frame = self.window.frameRectForContentRect(content.into());
+        self.window.setFrame_display_animate(frame, true, animate);
     }
 
     /// Makes `view` fill the content area, replacing the view there.
