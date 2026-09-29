@@ -136,6 +136,18 @@ pub fn sdr_base_and_headroom(color: &NSColor) -> (Retained<NSColor>, f64) {
     }
 }
 
+/// `color` as a `CGColor`, for installing on a `CALayer`.
+#[must_use]
+pub fn cg(color: &NSColor) -> Retained<CGColor> {
+    color.CGColor()
+}
+
+/// The same color with `alpha` replacing its opacity.
+#[must_use]
+pub fn with_alpha(color: &NSColor, alpha: f64) -> Retained<NSColor> {
+    color.colorWithAlphaComponent(alpha)
+}
+
 /// `color` converted into the extended sRGB — or plain sRGB — space and
 /// read as components, using the appearance in effect at this moment.
 ///

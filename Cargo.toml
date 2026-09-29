@@ -48,8 +48,10 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = [
     "std",
+    "CGAffineTransform",
     "CGColor",
     "CGColorSpace",
+    "CGPath",
 ] }
 objc2-core-text = { version = "0.3", default-features = false, features = [
     "std",
@@ -93,7 +95,9 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = [
     "CAAnimation",
     "CALayer",
     "CAMediaTiming",
+    "CAShapeLayer",
     "CATransaction",
+    "CATransform3D",
     "CAMediaTimingFunction",
     "objc2-core-foundation",
     "objc2-core-graphics",

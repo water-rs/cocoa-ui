@@ -127,6 +127,20 @@ pub fn linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<UIColor> 
     UIColor::colorWithCGColor(&cg)
 }
 
+/// `color` as a `CGColor`, for installing on a `CALayer`.
+#[must_use]
+pub fn cg(color: &UIColor) -> Retained<CGColor> {
+    // SAFETY: `CGColor` is a documented accessor on a live color; the
+    // returned object is retained by the call.
+    unsafe { color.CGColor() }
+}
+
+/// The same color with `alpha` replacing its opacity.
+#[must_use]
+pub fn with_alpha(color: &UIColor, alpha: f64) -> Retained<UIColor> {
+    color.colorWithAlphaComponent(alpha)
+}
+
 /// What `color` draws as under `scheme`.
 #[must_use]
 pub fn resolve(color: UiColor, scheme: ColorScheme) -> Rgba {

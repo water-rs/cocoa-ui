@@ -127,6 +127,52 @@ pub fn set_frame(view: &PlatformView, frame: Rect) {
     view.setFrame(frame.into());
 }
 
+/// Sets `view`'s bounds — its frame in its own coordinate space.
+///
+/// Writing bounds instead of frame keeps the center fixed, which a
+/// transform pivot depends on.
+pub fn set_bounds(view: &PlatformView, bounds: Rect) {
+    view.setBounds(bounds.into());
+}
+
+/// Moves `view` so its bounds' midpoint lands on `center` — a `UIView`
+/// property; `NSView` positions through its frame.
+#[cfg(target_os = "ios")]
+pub fn set_center(view: &PlatformView, center: Point) {
+    view.setCenter(center.into());
+}
+
+/// Writes `view`'s 2D transform — `UIView.transform`. On `AppKit` the layer
+/// owns the transform instead; see [`crate::core_animation`].
+#[cfg(target_os = "ios")]
+pub fn set_transform(view: &PlatformView, transform: objc2_core_graphics::CGAffineTransform) {
+    view.setTransform(transform);
+}
+
+/// Tells the nearest ancestor that captures rendered content — one
+/// answering `renderedContentDidInvalidate` — that `view`'s appearance
+/// changed, walking the superview chain until one answers.
+///
+/// A wrapper that changes how its content looks without a relayout (a
+/// transform, an alpha, a decoration) calls this so a cached capture — a
+/// filter or snapshot — re-renders.
+pub fn invalidate_captured_rendering(view: &PlatformView) {
+    let selector = objc2::sel!(renderedContentDidInvalidate);
+    let mut ancestor = superview(view);
+    while let Some(current) = ancestor {
+        if current.respondsToSelector(selector) {
+            // SAFETY: `respondsToSelector` proved the method exists; it
+            // takes no arguments and returns void by the protocol's
+            // contract.
+            unsafe {
+                let _: () = objc2::msg_send![&*current, renderedContentDidInvalidate];
+            }
+            return;
+        }
+        ancestor = superview(&current);
+    }
+}
+
 /// Adds `child` above `parent`'s existing subviews.
 pub fn add_subview(parent: &PlatformView, child: &PlatformView) {
     parent.addSubview(child);

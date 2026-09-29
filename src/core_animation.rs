@@ -1,6 +1,10 @@
 //! Core Animation, the compositor both frameworks draw through.
 
+#[cfg(target_os = "macos")]
+use objc2::rc::Retained;
 use objc2_quartz_core::CATransaction;
+#[cfg(target_os = "macos")]
+use objc2_quartz_core::CATransform3D;
 
 /// Commits the current Core Animation transaction to the render server now,
 /// rather than at the end of this turn of the run loop.
@@ -208,4 +212,112 @@ pub fn animate_with(timing: Timing, body: impl FnOnce() + 'static) {
             animate(estimated.clamp(0.1, 2.0), None, body);
         }
     }
+}
+
+/// Writes `layer`'s transform with implicit actions disabled — an
+/// `NSAnimationContext`-free set, for transforms `AppKit` would otherwise
+/// animate as implicit layer changes.
+///
+/// `AppKit` owns a layer-backed view's layer geometry, so the transform is
+/// set on the layer inside a `CATransaction` that suppresses the implicit
+/// animation.
+#[cfg(target_os = "macos")]
+pub fn set_layer_transform(layer: &objc2_quartz_core::CALayer, transform: CATransform3D) {
+    use objc2_quartz_core::CATransaction;
+
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    layer.setTransform(transform);
+    CATransaction::commit();
+}
+
+/// Moves `layer`'s transform to `transform`, animating the `transform`
+/// keypath under `timing` — `None` writes it directly.
+///
+/// The explicit `CAAnimation` runs on the compositor so it survives the
+/// layout passes that rewrite the layer's geometry; `key` identifies it so
+/// a later change replaces it. The animation reads `fromValue` from the
+/// presentation layer, so a mid-flight change starts from where the screen
+/// actually is.
+#[cfg(target_os = "macos")]
+pub fn animate_layer_transform(
+    layer: &objc2_quartz_core::CALayer,
+    transform: CATransform3D,
+    key: &str,
+    timing: Option<Timing>,
+) {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSString, ns_string};
+    use objc2_quartz_core::{
+        CAAnimation, CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CASpringAnimation,
+        kCAFillModeBoth,
+    };
+
+    let Some(timing) = timing else {
+        set_layer_transform(layer, transform);
+        return;
+    };
+
+    // The transform the screen currently shows: the presentation layer's
+    // when an animation is already playing, the model's otherwise.
+    // SAFETY: `presentationLayer` is a documented accessor on a live layer.
+    let from = unsafe {
+        layer.presentationLayer().map_or_else(
+            || layer.transform(),
+            |presentation| presentation.transform(),
+        )
+    };
+    layer.removeAnimationForKey(&NSString::from_str(key));
+
+    // `NSValue +valueWithCATransform3D:` wraps the transform for
+    // `fromValue`/`toValue`; it has no generated binding, so the selector
+    // is sent directly.
+    // SAFETY: `valueWithCATransform3D:` is a class method on `NSValue`
+    // taking the struct by value and answering a retained `NSValue`.
+    let from_value: Retained<AnyObject> =
+        unsafe { objc2::msg_send![objc2::class!(NSValue), valueWithCATransform3D: from] };
+    // SAFETY: see `from_value`.
+    let to_value: Retained<AnyObject> =
+        unsafe { objc2::msg_send![objc2::class!(NSValue), valueWithCATransform3D: transform] };
+
+    let animation: Retained<CAAnimation> = match timing {
+        Timing::Bezier {
+            duration,
+            control_points: [x1, y1, x2, y2],
+        } => {
+            let basic = CABasicAnimation::animationWithKeyPath(Some(ns_string!("transform")));
+            basic.setDuration(duration);
+            let function = CAMediaTimingFunction::functionWithControlPoints(x1, y1, x2, y2);
+            basic.setTimingFunction(Some(&function));
+            // SAFETY: the values are `NSValue` objects — `AnyObject`s.
+            unsafe {
+                basic.setFromValue(Some(&from_value));
+                basic.setToValue(Some(&to_value));
+            }
+            // SAFETY: `CAAnimation` is `CABasicAnimation`'s superclass.
+            unsafe { Retained::cast_unchecked(basic) }
+        }
+        Timing::Spring { stiffness, damping } => {
+            let spring = CASpringAnimation::animationWithKeyPath(Some(ns_string!("transform")));
+            spring.setMass(1.0);
+            spring.setStiffness(stiffness);
+            spring.setDamping(damping);
+            spring.setInitialVelocity(0.0);
+            spring.setDuration(spring.settlingDuration());
+            // SAFETY: the values are `NSValue` objects — `AnyObject`s.
+            unsafe {
+                spring.setFromValue(Some(&from_value));
+                spring.setToValue(Some(&to_value));
+            }
+            // SAFETY: `CAAnimation` is `CASpringAnimation`'s superclass.
+            unsafe { Retained::cast_unchecked(spring) }
+        }
+    };
+    animation.setRemovedOnCompletion(true);
+    // SAFETY: `kCAFillModeBoth` is a `CAMediaTimingFillMode` constant Core
+    // Animation exports.
+    animation.setFillMode(unsafe { kCAFillModeBoth });
+
+    set_layer_transform(layer, transform);
+    layer.addAnimation_forKey(&animation, Some(&NSString::from_str(key)));
 }
