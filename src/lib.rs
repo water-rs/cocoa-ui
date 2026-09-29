@@ -64,6 +64,7 @@ pub mod focus;
 pub mod font;
 pub mod fonts;
 pub mod geometry;
+pub mod gesture;
 pub mod image;
 pub mod locale;
 pub mod log;

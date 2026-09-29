@@ -13,10 +13,12 @@ use std::ptr;
 use std::rc::Rc;
 
 use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSScreen, NSView};
+use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSScreen, NSView};
 use objc2_foundation::{NSArray, NSEdgeInsets, NSObjectProtocol, NSPoint, NSRect, NSSize};
 
+use super::drag_drop::{DragInfo, DropHandlers};
 use crate::callback::guarded;
 use crate::geometry::{EdgeInsets, MeasureProposal, Point, Rect, Size};
 
@@ -43,6 +45,7 @@ type MeasureHandler = Rc<dyn Fn(&HostView, MeasureProposal) -> Size>;
 type PrimaryContentHandler = Rc<dyn Fn(&HostView) -> Option<Retained<NSView>>>;
 type ScrollSurfaceHandler = Rc<dyn Fn(&HostView) -> Vec<Retained<NSView>>>;
 type HiddenHandler = Rc<dyn Fn(&HostView, bool)>;
+type MouseHandler = Rc<dyn Fn(&HostView, &NSEvent)>;
 
 /// The handlers a [`HostView`] calls.
 #[derive(Default)]
@@ -56,6 +59,9 @@ pub struct HostViewIvars {
     primary_content: RefCell<Option<PrimaryContentHandler>>,
     scroll_surface_candidates: RefCell<Option<ScrollSurfaceHandler>>,
     hidden: RefCell<Option<HiddenHandler>>,
+    mouse_down: RefCell<Option<MouseHandler>>,
+    mouse_dragged: RefCell<Option<MouseHandler>>,
+    drop: RefCell<Option<Rc<DropHandlers>>>,
     /// Whether the view's own content is laid out against its bounds — the
     /// answer to "does this view manage its own safe area".
     manages_safe_area: std::cell::Cell<bool>,
@@ -80,6 +86,9 @@ impl fmt::Debug for HostViewIvars {
             )
             .field("primary_content", &self.primary_content.borrow().is_some())
             .field("hidden", &self.hidden.borrow().is_some())
+            .field("mouse_down", &self.mouse_down.borrow().is_some())
+            .field("mouse_dragged", &self.mouse_dragged.borrow().is_some())
+            .field("drop", &self.drop.borrow().is_some())
             .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("measure", &self.measure.borrow().is_some())
             .field("manages_safe_area", &self.manages_safe_area.get())
@@ -247,6 +256,94 @@ define_class!(
         }
 
         // SAFETY: see the module safety note.
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down_override(&self, event: &NSEvent) {
+            guarded("HostView mouseDown:", || {
+                let handler = self.ivars().mouse_down.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self, event);
+                } else {
+                    // SAFETY: see the module safety note.
+                    let _: () = unsafe { msg_send![super(self), mouseDown: event] };
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged_override(&self, event: &NSEvent) {
+            guarded("HostView mouseDragged:", || {
+                let handler = self.ivars().mouse_dragged.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self, event);
+                } else {
+                    // SAFETY: see the module safety note.
+                    let _: () = unsafe { msg_send![super(self), mouseDragged: event] };
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(draggingEntered:))]
+        fn dragging_entered_override(
+            &self,
+            sender: &ProtocolObject<dyn NSDraggingInfo>,
+        ) -> NSDragOperation {
+            guarded("HostView draggingEntered:", || {
+                self.ivars().drop.borrow().clone().map_or_else(
+                    // SAFETY: see the module safety note.
+                    || unsafe { msg_send![super(self), draggingEntered: sender] },
+                    |handlers| (handlers.entered)(&DragInfo::new(sender)),
+                )
+            })
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(draggingUpdated:))]
+        fn dragging_updated_override(
+            &self,
+            sender: &ProtocolObject<dyn NSDraggingInfo>,
+        ) -> NSDragOperation {
+            guarded("HostView draggingUpdated:", || {
+                self.ivars().drop.borrow().clone().map_or_else(
+                    // SAFETY: see the module safety note.
+                    || unsafe { msg_send![super(self), draggingUpdated: sender] },
+                    |handlers| (handlers.updated)(&DragInfo::new(sender)),
+                )
+            })
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(draggingExited:))]
+        fn dragging_exited_override(&self, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) {
+            guarded("HostView draggingExited:", || {
+                if let Some(handlers) = self.ivars().drop.borrow().clone() {
+                    if let Some(sender) = sender {
+                        (handlers.exited)(&DragInfo::new(sender));
+                    }
+                } else {
+                    // SAFETY: see the module safety note.
+                    let _: () = unsafe { msg_send![super(self), draggingExited: sender] };
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(performDragOperation:))]
+        fn perform_drag_operation_override(
+            &self,
+            sender: &ProtocolObject<dyn NSDraggingInfo>,
+        ) -> bool {
+            guarded("HostView performDragOperation:", || {
+                self.ivars().drop.borrow().clone().map_or_else(
+                    // SAFETY: see the module safety note.
+                    || unsafe { msg_send![super(self), performDragOperation: sender] },
+                    |handlers| (handlers.perform)(&DragInfo::new(sender)),
+                )
+            })
+        }
+
+        // SAFETY: see the module safety note.
         #[unsafe(method_id(hitTest:))]
         fn hit_test_override(&self, point: NSPoint) -> Option<Retained<NSView>> {
             guarded("HostView hitTest:", || {
@@ -367,6 +464,37 @@ impl HostView {
     /// the window toolbar, `setNavigationChromeActive(_:)`'s equivalent.
     pub fn set_hidden_handler(&self, handler: impl Fn(&Self, bool) + 'static) {
         self.ivars().hidden.replace(Some(Rc::new(handler)));
+    }
+
+    /// Calls `handler` on `mouseDown`, replacing any handler set before.
+    /// Without a handler the event goes to `NSView`'s implementation.
+    pub fn set_mouse_down_handler(&self, handler: impl Fn(&Self, &NSEvent) + 'static) {
+        self.ivars().mouse_down.replace(Some(Rc::new(handler)));
+    }
+
+    /// Calls `handler` on `mouseDragged`, replacing any handler set before.
+    /// Without a handler the event goes to `NSView`'s implementation.
+    pub fn set_mouse_dragged_handler(&self, handler: impl Fn(&Self, &NSEvent) + 'static) {
+        self.ivars().mouse_dragged.replace(Some(Rc::new(handler)));
+    }
+
+    /// Makes the view a drop destination reporting to `handlers`, replacing
+    /// any handlers set before.
+    ///
+    /// `types` are the pasteboard types the view registers for; an empty
+    /// slice unregisters the view as a destination.
+    pub fn set_drop_handlers(
+        &self,
+        types: &[&objc2_foundation::NSString],
+        handlers: Option<DropHandlers>,
+    ) {
+        if let Some(handlers) = handlers {
+            self.ivars().drop.replace(Some(Rc::new(handlers)));
+            self.registerForDraggedTypes(&NSArray::from_slice(types));
+        } else {
+            self.ivars().drop.take();
+            self.unregisterDraggedTypes();
+        }
     }
 
     /// Adds `view` above the existing subviews.
