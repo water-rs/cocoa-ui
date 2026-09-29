@@ -87,6 +87,40 @@ pub fn has_window(view: &PlatformView) -> bool {
     view.window().is_some()
 }
 
+/// `view`'s bounds in its window's coordinate space.
+///
+/// On macOS the result keeps `AppKit`'s bottom-left origin; a top-left
+/// consumer mirrors it against the content area's height.
+#[must_use]
+pub fn bounds_in_window(view: &PlatformView) -> Rect {
+    view.convertRect_toView(view.bounds(), None).into()
+}
+
+/// Lets `view` resize with its superview on both axes.
+///
+/// The autoresizing mask `UIViewAutoresizing.flexibleWidth |
+/// .flexibleHeight`, the same flag pair `NSView` spells `ViewWidthSizable |
+/// ViewHeightSizable`.
+pub fn set_autoresizing_flexible_size(view: &PlatformView) {
+    #[cfg(target_os = "macos")]
+    view.setAutoresizingMask(
+        objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
+            | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    #[cfg(target_os = "ios")]
+    view.setAutoresizingMask(
+        objc2_ui_kit::UIViewAutoresizing::FlexibleWidth
+            | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight,
+    );
+}
+
+/// Whether `view` posts `NSViewFrameDidChangeNotification` on every frame
+/// change — off by default, so a caller watching the notification opts in.
+#[cfg(target_os = "macos")]
+pub fn set_posts_frame_changed(view: &PlatformView, enabled: bool) {
+    view.setPostsFrameChangedNotifications(enabled);
+}
+
 /// Tells `view` and every ancestor that its size may have changed.
 ///
 /// Invalidates intrinsic content size and marks each for layout. Call from a

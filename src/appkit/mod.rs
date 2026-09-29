@@ -45,6 +45,7 @@ mod effect_view;
 pub mod event;
 mod host_view;
 pub mod image;
+mod list_table;
 mod menu;
 mod panel;
 mod popup_button;
@@ -88,10 +89,12 @@ pub use progress::Progress;
 mod scroll;
 pub use scroll::ScrollView;
 mod stepper;
-pub use stepper::Stepper;
-pub use table::{
-    DeleteButton, RowContainer, SectionHeader, SectionKind, TableRowView, TableSource, TableView,
+pub use list_table::{
+    DeleteButton, RowContainer, SectionHeader, SectionKind, TableRowView, TableSource,
+    TableView as ListTableView,
 };
+pub use stepper::Stepper;
+pub use table::TableView;
 pub mod text_field;
 pub use popup_button::PopUpButton;
 pub use search_field::SearchField;
