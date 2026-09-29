@@ -51,6 +51,7 @@
 
 #![cfg(any(target_os = "macos", target_os = "ios"))]
 
+pub mod accessibility;
 pub mod action;
 #[cfg(target_os = "macos")]
 pub mod appkit;
@@ -66,12 +67,14 @@ pub mod fonts;
 pub mod geometry;
 pub mod gesture;
 pub mod image;
+pub mod keys;
 pub mod locale;
 pub mod log;
 pub mod main_queue;
 pub mod menu;
 pub mod notification;
 pub mod picker;
+pub mod pointer;
 pub mod process;
 pub mod progress;
 pub mod scroll;

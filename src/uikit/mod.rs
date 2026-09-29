@@ -37,15 +37,21 @@ pub mod button;
 mod calendar_view;
 mod color_view;
 pub mod color_well;
+mod context_menu;
 mod date_picker;
 pub mod drag_drop;
 pub mod gesture;
 pub use color_well::ColorWell;
+pub use context_menu::{
+    AccessoryOverlay, ContextMenu, ContextMenuConfiguration, ContextMenuHandlers, bounds_in_window,
+    preview_controller, targeted_preview, targeted_preview_at,
+};
 pub mod colors;
 mod host_view;
 pub mod image;
 mod menu;
 mod navigation;
+pub use pointer::PointerInteraction;
 mod search_bar;
 mod split;
 mod tabs;
@@ -66,6 +72,7 @@ pub use image::ImageView;
 pub mod label;
 pub use menu::{Menu, MenuAction, MenuButton, MenuElement};
 mod picker;
+mod pointer;
 pub use picker::Picker;
 pub mod toggle;
 pub use label::Label;

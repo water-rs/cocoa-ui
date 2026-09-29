@@ -7,20 +7,24 @@
 //! signature `NSView` declares, and `AppKit` calls them on the main thread;
 //! `isFlipped` may be asked from any thread and answers a constant.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::ptr;
 use std::rc::Rc;
 
+use objc2::AnyThread;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSScreen, NSView};
+use objc2_app_kit::{NSEvent, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView};
 use objc2_foundation::{NSArray, NSEdgeInsets, NSObjectProtocol, NSPoint, NSRect, NSSize};
 
 use super::drag_drop::{DragInfo, DropHandlers};
 use crate::callback::guarded;
 use crate::geometry::{EdgeInsets, MeasureProposal, Point, Rect, Size};
+use crate::keys::{self, KeyEvent};
+use crate::pointer::{PointerEvent, PointerEvents};
 
 /// What a [`HostView`]'s hit-test handler decides for a point.
 #[derive(Debug, Clone)]
@@ -46,6 +50,9 @@ type PrimaryContentHandler = Rc<dyn Fn(&HostView) -> Option<Retained<NSView>>>;
 type ScrollSurfaceHandler = Rc<dyn Fn(&HostView) -> Vec<Retained<NSView>>>;
 type HiddenHandler = Rc<dyn Fn(&HostView, bool)>;
 type MouseHandler = Rc<dyn Fn(&HostView, &NSEvent)>;
+type PointerHandler = Rc<dyn Fn(&HostView, PointerEvent) -> bool>;
+type KeyHandler = Rc<dyn Fn(&HostView, &KeyEvent) -> bool>;
+type RightMouseHandler = Rc<dyn Fn(&HostView, &NSEvent)>;
 
 /// The handlers a [`HostView`] calls.
 #[derive(Default)]
@@ -62,6 +69,16 @@ pub struct HostViewIvars {
     mouse_down: RefCell<Option<MouseHandler>>,
     mouse_dragged: RefCell<Option<MouseHandler>>,
     drop: RefCell<Option<Rc<DropHandlers>>>,
+    pointer: RefCell<Option<PointerHandler>>,
+    /// Which pointer events the pointer handler wants.
+    pointer_events: Cell<PointerEvents>,
+    /// Whether the pointer is currently over the view.
+    pointer_inside: Cell<bool>,
+    /// The tracking area serving the pointer handler, recreated by
+    /// `updateTrackingAreas`.
+    tracking_area: RefCell<Option<Retained<NSTrackingArea>>>,
+    key: RefCell<Option<KeyHandler>>,
+    right_mouse: RefCell<Option<RightMouseHandler>>,
     /// Whether the view's own content is laid out against its bounds — the
     /// answer to "does this view manage its own safe area".
     manages_safe_area: std::cell::Cell<bool>,
@@ -93,6 +110,12 @@ impl fmt::Debug for HostViewIvars {
             .field("measure", &self.measure.borrow().is_some())
             .field("manages_safe_area", &self.manages_safe_area.get())
             .field("intrinsic_auto_layout", &self.intrinsic_auto_layout.get())
+            .field("pointer", &self.pointer.borrow().is_some())
+            .field("pointer_events", &self.pointer_events.get())
+            .field("pointer_inside", &self.pointer_inside.get())
+            .field("tracking_area", &self.tracking_area.borrow().is_some())
+            .field("key", &self.key.borrow().is_some())
+            .field("right_mouse", &self.right_mouse.borrow().is_some())
             .finish()
     }
 }
@@ -363,6 +386,114 @@ define_class!(
                 }
             })
         }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(updateTrackingAreas))]
+        fn update_tracking_areas_override(&self) {
+            guarded("HostView updateTrackingAreas", || {
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), updateTrackingAreas] };
+                if let Some(area) = self.ivars().tracking_area.replace(None) {
+                    self.removeTrackingArea(&area);
+                }
+                let events = self.ivars().pointer_events.get();
+                if events == PointerEvents::NONE || self.ivars().pointer.borrow().is_none() {
+                    return;
+                }
+                let mut options = NSTrackingAreaOptions::ActiveInKeyWindow
+                    | NSTrackingAreaOptions::InVisibleRect;
+                if events.wants(PointerEvent::Entered) || events.wants(PointerEvent::Exited) {
+                    options |= NSTrackingAreaOptions::MouseEnteredAndExited;
+                }
+                if events.wants(PointerEvent::Moved(Point::ZERO)) {
+                    options |= NSTrackingAreaOptions::MouseMoved;
+                }
+                if events.wants(PointerEvent::CursorUpdate) {
+                    options |= NSTrackingAreaOptions::CursorUpdate;
+                }
+                // SAFETY: `self` owns the area until `updateTrackingAreas`
+                // removes it, and the options describe it.
+                let area = unsafe {
+                    NSTrackingArea::initWithRect_options_owner_userInfo(
+                        NSTrackingArea::alloc(),
+                        NSRect::ZERO,
+                        options,
+                        Some(AsRef::<objc2::runtime::AnyObject>::as_ref(self)),
+                        None,
+                    )
+                };
+                self.addTrackingArea(&area);
+                self.ivars().tracking_area.replace(Some(area));
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered_override(&self, event: &NSEvent) {
+            guarded("HostView mouseEntered:", || {
+                self.ivars().pointer_inside.set(true);
+                self.deliver_pointer(PointerEvent::Entered, event);
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(mouseMoved:))]
+        fn mouse_moved_override(&self, event: &NSEvent) {
+            guarded("HostView mouseMoved:", || {
+                // SAFETY: `event` is a live mouse event.
+                let point = self.convertPoint_fromView(event.locationInWindow(), None);
+                self.deliver_pointer(PointerEvent::Moved(point.into()), event);
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited_override(&self, event: &NSEvent) {
+            guarded("HostView mouseExited:", || {
+                self.ivars().pointer_inside.set(false);
+                self.deliver_pointer(PointerEvent::Exited, event);
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(cursorUpdate:))]
+        fn cursor_update_override(&self, event: &NSEvent) {
+            guarded("HostView cursorUpdate:", || {
+                if self.deliver_pointer(PointerEvent::CursorUpdate, event) {
+                    return;
+                }
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), cursorUpdate: event] };
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(keyDown:))]
+        fn key_down_override(&self, event: &NSEvent) {
+            guarded("HostView keyDown:", || {
+                let handler = self.ivars().key.borrow().clone();
+                let key = keys::key_event(event);
+                if handler.is_some_and(|handler| handler(self, &key)) {
+                    return;
+                }
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), keyDown: event] };
+            });
+        }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(rightMouseDown:))]
+        fn right_mouse_down_override(&self, event: &NSEvent) {
+            guarded("HostView rightMouseDown:", || {
+                let handler = self.ivars().right_mouse.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self, event);
+                    return;
+                }
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), rightMouseDown: event] };
+            });
+        }
     }
 );
 
@@ -411,6 +542,53 @@ impl HostView {
     /// may have changed.
     pub fn set_superview_handler(&self, handler: impl Fn(&Self) + 'static) {
         self.ivars().superview.replace(Some(Rc::new(handler)));
+    }
+
+    /// Sends `event` to the pointer handler when it wants it; returns
+    /// whether it consumed it.
+    fn deliver_pointer(&self, event: PointerEvent, _native: &NSEvent) -> bool {
+        if !self.ivars().pointer_events.get().wants(event) {
+            return false;
+        }
+        let handler = self.ivars().pointer.borrow().clone();
+        handler.is_some_and(|handler| handler(self, event))
+    }
+
+    /// Calls `handler` for each pointer `event` in `events`, replacing any
+    /// handler set before.
+    ///
+    /// A tracking area covering the view's visible rect serves the events;
+    /// [`PointerEvent::Moved`]'s point is in the view's own coordinates.
+    /// The handler's return value is only meaningful for
+    /// [`PointerEvent::CursorUpdate`]: `true` stops the event there,
+    /// `false` lets `AppKit` continue to the next responder.
+    pub fn set_pointer_handler(
+        &self,
+        events: PointerEvents,
+        handler: impl Fn(&Self, PointerEvent) -> bool + 'static,
+    ) {
+        self.ivars().pointer.replace(Some(Rc::new(handler)));
+        self.ivars().pointer_events.set(events);
+        self.updateTrackingAreas();
+    }
+
+    /// Whether the pointer is currently over this view.
+    #[must_use]
+    pub fn is_pointer_inside(&self) -> bool {
+        self.ivars().pointer_inside.get()
+    }
+
+    /// Lets `handler` decide whether a key press on this view is consumed,
+    /// replacing any handler set before. A consumed `keyDown` goes no
+    /// further; an unconsumed one is passed up the responder chain.
+    pub fn set_key_handler(&self, handler: impl Fn(&Self, &KeyEvent) -> bool + 'static) {
+        self.ivars().key.replace(Some(Rc::new(handler)));
+    }
+
+    /// Calls `handler` on a secondary click (`rightMouseDown`), replacing
+    /// any handler set before.
+    pub fn set_right_mouse_handler(&self, handler: impl Fn(&Self, &NSEvent) + 'static) {
+        self.ivars().right_mouse.replace(Some(Rc::new(handler)));
     }
 
     /// Lets `handler` answer the view's intrinsic measurements,

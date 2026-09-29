@@ -12,14 +12,22 @@ use std::fmt;
 use std::ptr;
 use std::rc::Rc;
 
-use objc2::rc::Retained;
+use objc2::rc::{Retained, Weak};
+use objc2::runtime::AnyObject;
+use objc2::sel;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_foundation::{NSArray, NSObjectProtocol};
-use objc2_ui_kit::{UIEdgeInsets, UIEvent, UITraitEnvironment, UIView};
+use objc2_foundation::{NSArray, NSMutableSet, NSObject, NSObjectProtocol};
+use objc2_ui_kit::{
+    UIEdgeInsets, UIEvent, UIGestureRecognizerState, UIHoverGestureRecognizer, UIPress,
+    UIPressesEvent, UITraitEnvironment, UIView,
+};
 
 use crate::callback::guarded;
 use crate::geometry::{EdgeInsets, Edges, MeasureProposal, Point, Rect, Size};
+use crate::geometry::{EdgeInsets, MeasureProposal, Point, Rect, Size};
+use crate::keys::{self, KeyEvent};
+use crate::pointer::{PointerEvent, PointerEvents};
 
 /// What a [`HostView`]'s hit-test handler decides for a point.
 #[derive(Debug, Clone)]
@@ -43,6 +51,8 @@ type WindowHandler = Rc<dyn Fn(&HostView)>;
 type MeasureHandler = Rc<dyn Fn(&HostView, MeasureProposal) -> Size>;
 type PrimaryContentHandler = Rc<dyn Fn(&HostView) -> Option<Retained<UIView>>>;
 type ScrollSurfaceHandler = Rc<dyn Fn(&HostView) -> Vec<Retained<UIView>>>;
+type PointerHandler = Rc<dyn Fn(&HostView, PointerEvent) -> bool>;
+type KeyHandler = Rc<dyn Fn(&HostView, &KeyEvent) -> bool>;
 
 /// The handlers a [`HostView`] calls, and the state it keeps for them.
 #[derive(Default)]
@@ -73,6 +83,15 @@ pub struct HostViewIvars {
     /// Whether this is a view controller's root view, which always fills its
     /// window; see [`window_root`].
     fills_window: Cell<bool>,
+    pointer: RefCell<Option<PointerHandler>>,
+    /// Which pointer events the pointer handler wants.
+    pointer_events: Cell<PointerEvents>,
+    /// Whether the pointer is currently over the view.
+    pointer_inside: Cell<bool>,
+    /// The recognizer serving the pointer handler, kept so the target
+    /// stays alive.
+    hover_recognizer: RefCell<Option<Retained<UIHoverGestureRecognizer>>>,
+    key: RefCell<Option<KeyHandler>>,
 }
 
 impl fmt::Debug for HostViewIvars {
@@ -99,6 +118,73 @@ impl fmt::Debug for HostViewIvars {
             .field("manages_safe_area", &self.manages_safe_area.get())
             .field("intrinsic_auto_layout", &self.intrinsic_auto_layout.get())
             .finish_non_exhaustive()
+            .field("pointer", &self.pointer.borrow().is_some())
+            .field("pointer_events", &self.pointer_events.get())
+            .field("pointer_inside", &self.pointer_inside.get())
+            .field(
+                "hover_recognizer",
+                &self.hover_recognizer.borrow().is_some(),
+            )
+            .field("key", &self.key.borrow().is_some())
+            .finish()
+    }
+}
+
+/// The closure a [`HoverTarget`] runs.
+type HoverHandler = Rc<dyn Fn(&UIHoverGestureRecognizer)>;
+
+/// The ivars of a [`HoverTarget`]: the closure it runs.
+#[derive(Default)]
+pub struct HoverTargetIvars {
+    handler: RefCell<Option<HoverHandler>>,
+}
+
+impl fmt::Debug for HoverTargetIvars {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HoverTargetIvars")
+            .field("handler", &self.handler.borrow().is_some())
+            .finish()
+    }
+}
+
+define_class!(
+    // SAFETY: `NSObject` asks a subclass to initialize through `init`, which
+    // `HoverTarget::new` does, and the class does not implement `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "CocoaUiHoverTarget"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = HoverTargetIvars]
+    #[derive(Debug)]
+    /// The action target of a [`UIHoverGestureRecognizer`] attached to a
+    /// [`HostView`]: the recognizer owns it, it forwards to the view's
+    /// pointer handler.
+    struct HoverTarget;
+
+    // SAFETY: `NSObjectProtocol` asks nothing of an `NSObject` subclass.
+    unsafe impl NSObjectProtocol for HoverTarget {}
+
+    impl HoverTarget {
+        // SAFETY: see the module safety note.
+        #[unsafe(method(cocoaUiHover:))]
+        fn cocoa_ui_hover(&self, recognizer: &UIHoverGestureRecognizer) {
+            guarded("HoverTarget cocoaUiHover:", || {
+                let handler = self.ivars().handler.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(recognizer);
+                }
+            });
+        }
+    }
+);
+
+impl HoverTarget {
+    /// A target that runs `handler` when its recognizer fires.
+    fn new(mtm: MainThreadMarker, handler: HoverHandler) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(HoverTargetIvars {
+            handler: RefCell::new(Some(handler)),
+        });
+        // SAFETY: `init` is `NSObject`'s designated initializer.
+        unsafe { msg_send![super(this), init] }
     }
 }
 
@@ -293,6 +379,34 @@ define_class!(
                 }
             })
         }
+
+        // SAFETY: see the module safety note.
+        #[unsafe(method(pressesBegan:withEvent:))]
+        fn presses_began_override(
+            &self,
+            presses: &objc2_foundation::NSSet<UIPress>,
+            event: Option<&UIPressesEvent>,
+        ) {
+            guarded("HostView pressesBegan:withEvent:", || {
+                let handler = self.ivars().key.borrow().clone();
+                let unconsumed = NSMutableSet::<UIPress>::new();
+                for press in presses {
+                    let consumed = handler.as_ref().is_some_and(|handler| {
+                        press
+                            .key(self.mtm())
+                            .is_some_and(|key| handler(self, &keys::key_event(&key)))
+                    });
+                    if !consumed {
+                        unconsumed.addObject(&press);
+                    }
+                }
+                // SAFETY: see the module safety note.
+                unsafe {
+                    let _: () =
+                        msg_send![super(self), pressesBegan: &*unconsumed, withEvent: event];
+                }
+            });
+        }
     }
 );
 
@@ -335,6 +449,88 @@ impl HostView {
     /// or is lost.
     pub fn set_window_handler(&self, handler: impl Fn(&Self) + 'static) {
         self.ivars().window.replace(Some(Rc::new(handler)));
+    }
+
+    /// Sends the hover recognizer's state change to the pointer handler
+    /// when it wants that event.
+    fn deliver_hover(&self, recognizer: &UIHoverGestureRecognizer) {
+        let events = self.ivars().pointer_events.get();
+        let handler = self.ivars().pointer.borrow().clone();
+        let Some(handler) = handler else { return };
+        match recognizer.state() {
+            UIGestureRecognizerState::Began => {
+                self.ivars().pointer_inside.set(true);
+                if events.wants(PointerEvent::Entered) {
+                    handler(self, PointerEvent::Entered);
+                }
+            }
+            UIGestureRecognizerState::Changed => {
+                if events.wants(PointerEvent::Moved(Point::ZERO)) {
+                    let point = recognizer.locationInView(Some(self));
+                    handler(self, PointerEvent::Moved(point.into()));
+                }
+            }
+            UIGestureRecognizerState::Ended
+            | UIGestureRecognizerState::Cancelled
+            | UIGestureRecognizerState::Failed => {
+                self.ivars().pointer_inside.set(false);
+                if events.wants(PointerEvent::Exited) {
+                    handler(self, PointerEvent::Exited);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Calls `handler` for each pointer `event` in `events`, replacing any
+    /// handler set before.
+    ///
+    /// The events arrive through a `UIHoverGestureRecognizer`;
+    /// [`PointerEvent::Moved`]'s point is in the view's own coordinates.
+    /// `UIKit` has no cursor contract, so [`PointerEvent::CursorUpdate`] is
+    /// never delivered and the handler's return value is ignored.
+    pub fn set_pointer_handler(
+        &self,
+        events: PointerEvents,
+        handler: impl Fn(&Self, PointerEvent) -> bool + 'static,
+    ) {
+        self.ivars().pointer.replace(Some(Rc::new(handler)));
+        self.ivars().pointer_events.set(events);
+        let mtm = self.mtm();
+        let weak = Weak::new(self);
+        let target = HoverTarget::new(
+            mtm,
+            Rc::new(move |recognizer: &UIHoverGestureRecognizer| {
+                if let Some(view) = weak.load() {
+                    view.deliver_hover(recognizer);
+                }
+            }),
+        );
+        // SAFETY: `target` owns the handler and `cocoaUiHover:` is its
+        // declared action; the recognizer retains its target.
+        let recognizer = unsafe {
+            UIHoverGestureRecognizer::initWithTarget_action(
+                UIHoverGestureRecognizer::alloc(mtm),
+                Some(AsRef::<AnyObject>::as_ref(&*target)),
+                Some(sel!(cocoaUiHover:)),
+            )
+        };
+        self.addGestureRecognizer(&recognizer);
+        self.ivars().hover_recognizer.replace(Some(recognizer));
+    }
+
+    /// Whether the pointer is currently over this view.
+    #[must_use]
+    pub fn is_pointer_inside(&self) -> bool {
+        self.ivars().pointer_inside.get()
+    }
+
+    /// Lets `handler` decide whether a key press on this view is consumed,
+    /// replacing any handler set before. A press `handler` consumes is
+    /// removed from the set `pressesBegan` forwards; the rest continue up
+    /// the responder chain.
+    pub fn set_key_handler(&self, handler: impl Fn(&Self, &KeyEvent) -> bool + 'static) {
+        self.ivars().key.replace(Some(Rc::new(handler)));
     }
 
     /// Calls `handler` every time the view moves into or out of a superview —

@@ -34,6 +34,7 @@ dependencies = [
  "bitflags",
  "block2",
  "dispatch2",
+ "keyboard-types",
  "libc",
  "mach2",
  "objc2",
@@ -63,6 +64,15 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "keyboard-types"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
+dependencies = [
+ "bitflags",
+]
 
 [[package]]
 name = "libc"

@@ -300,6 +300,86 @@ impl From<Rect> for CGRect {
     }
 }
 
+/// The frame of an accessory anchored to a preview.
+///
+/// Centred on the preview's horizontal midpoint, above it with `gap` of air
+/// when the space allows, below it when not, clamped inside `container`
+/// with `edge_margin` on every side. Sizes wider or taller than the
+/// container minus the margins are clipped first.
+///
+/// Written for a top-left coordinate space — "above" is
+/// `preview.minY - gap - height`. For `AppKit`'s bottom-left screen
+/// coordinates use [`anchored_screen_frame`].
+#[must_use]
+pub fn anchored_frame(
+    preview: Rect,
+    accessory: Size,
+    container: Rect,
+    gap: f64,
+    edge_margin: f64,
+) -> Rect {
+    let double_margin = edge_margin * 2.0;
+    let width = accessory
+        .width
+        .min((container.size.width - double_margin).max(0.0));
+    let height = accessory
+        .height
+        .min((container.size.height - double_margin).max(0.0));
+    let inner_min_x = container.origin.x + edge_margin;
+    let inner_min_y = container.origin.y + edge_margin;
+    let inner_max_x = container.origin.x + container.size.width - edge_margin;
+    let inner_max_y = container.origin.y + container.size.height - edge_margin;
+    let preview_mid_x = preview.origin.x + preview.size.width / 2.0;
+    let preview_min_y = preview.origin.y;
+    let preview_max_y = preview.origin.y + preview.size.height;
+
+    let x = (preview_mid_x - width / 2.0)
+        .max(inner_min_x)
+        .min(inner_min_x.max(inner_max_x - width));
+
+    let mut y = preview_min_y - gap - height;
+    if y < inner_min_y {
+        y = preview_max_y + gap;
+    }
+    if y + height > inner_max_y {
+        y = inner_min_y.max(inner_max_y - height);
+    }
+    Rect::new(x, y, width, height)
+}
+
+/// [`anchored_frame`] in a bottom-left screen coordinate space.
+///
+/// Every rect is mirrored about `screen_bounds` (which the mirror leaves
+/// unchanged), the top-left math runs, and the result is mirrored back.
+/// "Above the preview" lands at `preview.maxY + gap`, where screen `y`
+/// grows upward.
+#[must_use]
+pub fn anchored_screen_frame(
+    preview: Rect,
+    accessory: Size,
+    screen_bounds: Rect,
+    gap: f64,
+    edge_margin: f64,
+) -> Rect {
+    let mirror = |rect: Rect| {
+        Rect::new(
+            rect.origin.x,
+            screen_bounds.origin.y + screen_bounds.origin.y + screen_bounds.size.height
+                - rect.origin.y
+                - rect.size.height,
+            rect.size.width,
+            rect.size.height,
+        )
+    };
+    mirror(anchored_frame(
+        mirror(preview),
+        accessory,
+        screen_bounds,
+        gap,
+        edge_margin,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Point, Rect, Size};

@@ -35,6 +35,7 @@ multiple_crate_versions = { level = "allow", priority = 1 }
 block2 = "0.6"
 dispatch2 = { version = "0.3", default-features = false, features = ["std", "objc2"] }
 libc = "0.2"
+keyboard-types = { version = "0.8.3", default-features = false }
 objc2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
     "std",
@@ -317,6 +318,8 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
     "UIMenu",
     "UIMenuElement",
     "UIAction",
+    "UIContextMenuConfiguration",
+    "UIContextMenuInteraction",
     "UIGestureRecognizer",
     "UIGestureRecognizerSubclass",
     "UILongPressGestureRecognizer",
@@ -329,6 +332,20 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
     "UIDragSession",
     "UIDropInteraction",
     "UIInteraction",
+    "UIHoverGestureRecognizer",
+    "UIHoverStyle",
+    "UIShape",
+    "UICommand",
+    "UIAccessibilityConstants",
+    "UIKey",
+    "UIKeyConstants",
+    "UIPointerInteraction",
+    "UIPointerRegion",
+    "UIPointerStyle",
+    "UIPress",
+    "UIPressesEvent",
+    "UIPreviewParameters",
+    "UITargetedPreview",
     "UIScreenEdgePanGestureRecognizer",
     "objc2-core-graphics",
     "block2",
