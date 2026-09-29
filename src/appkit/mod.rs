@@ -63,6 +63,8 @@ pub use menu::{KeyModifiers, Menu, MenuAction, MenuItem};
 pub use slider::Slider;
 mod progress;
 pub use progress::Progress;
+mod scroll;
+pub use scroll::ScrollView;
 mod stepper;
 pub use stepper::Stepper;
 pub mod text_field;

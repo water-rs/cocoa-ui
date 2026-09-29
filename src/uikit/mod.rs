@@ -63,6 +63,8 @@ pub mod text_field;
 pub use slider::Slider;
 mod progress;
 pub use progress::Progress;
+mod scroll;
+pub use scroll::ScrollView;
 mod stepper;
 pub use stepper::Stepper;
 pub use text_field::{SecureField, TextField};
