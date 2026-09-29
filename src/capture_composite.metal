@@ -8,7 +8,7 @@ using namespace metal;
 // Every texture in the capture pipeline is *top-down*: texel row 0 is the
 // visually topmost row. That is the convention `CAMetalLayer` presents, the
 // convention wgpu renders in, and therefore the convention the filter and
-// view-effect chains consume. `WuiMetalViewCapture` establishes it on the
+// view-effect chains consume. the capture side establishes it on the
 // `CARenderer` side by mirroring the captured layer tree vertically (see
 // `captureLayerTransform`), because `CARenderer` otherwise writes its
 // destination bottom-up.

@@ -90,8 +90,8 @@ impl Toggle {
     /// # Panics
     ///
     /// When not called on the main thread, or when the system `square` /
-    /// `checkmark.square.fill` symbols a checkbox needs are absent — the same
-    /// fatal authoring error `WuiToggle` raised.
+    /// `checkmark.square.fill` symbols a checkbox needs are absent — a
+    /// fatal authoring error.
     #[must_use]
     pub fn new(mtm: MainThreadMarker, kind: Kind, is_on: bool) -> Self {
         let control = match kind {

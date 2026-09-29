@@ -1,5 +1,5 @@
 //! The `UIKit` navigation stack: a `UINavigationController` of content
-//! view controllers, matching `WuiNavigationStack` semantics.
+//! view controllers.
 //!
 //! The controller keeps a stack of pages. `push`/`pop` animate the
 //! transition; `set_pages` rebuilds the stack when the path changes outside
@@ -134,8 +134,7 @@ impl NavContentController {
     ///
     /// `UINavigationItem` is a property the controller itself owns, not part
     /// of the view hierarchy, so the page's chrome applies through it rather
-    /// than through a subview — matching how `WuiContentViewController`
-    /// publishes its bar state.
+    /// than through a subview.
     pub fn set_page(&self, page: &NavPage) {
         // SAFETY: `navigationItem` is a `UIViewController` getter on the
         // main thread; the returned item is owned by the controller.
@@ -192,7 +191,7 @@ impl NavContentController {
         if let Some(search) = &page.search {
             // SAFETY: `initWithSearchResultsController:` is `UISearchController`'s
             // designated initializer; a nil results controller keeps the current
-            // content — the `WuiNavigationBarState` search drawer draws over the
+            // content — a results-less search controller draws over the
             // page itself.
             let controller: Retained<UISearchController> = unsafe {
                 msg_send![
@@ -265,7 +264,7 @@ impl NavContentController {
 
 /// The text-change reporter a page's search drawer fires through —
 /// `UISearchResultsUpdating`'s hook, driving the search binding like
-/// `WuiNavigationSearchCoordinator`.
+/// the search drawer's coordinator.
 pub struct SearchUpdaterIvars {
     /// Called with the search bar's current text when it changes.
     change: RefCell<Option<SearchChangeHandler>>,
@@ -543,7 +542,7 @@ pub fn bar_item(
     item
 }
 
-/// A standalone `UINavigationBar` — `WuiNavigationView`'s in-content bar
+/// A standalone `UINavigationBar` — the in-content bar
 /// when no `UINavigationController` hosts the page.
 pub struct NavBarIvars {
     /// The one item the bar shows.

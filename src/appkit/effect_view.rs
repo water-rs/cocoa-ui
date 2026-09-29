@@ -5,8 +5,9 @@ use objc2::msg_send;
 use objc2_app_kit::{NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectView};
 use objc2_foundation::MainThreadMarker;
 
-/// A material backdrop for in-content navigation chrome —
-/// `WuiNavigationView`'s header bar on non-titlebar windows.
+/// A material backdrop for in-content chrome — an `NSVisualEffectView`
+/// configured the way a header bar is: `HeaderView` material blended
+/// within the window.
 #[must_use]
 pub fn header_material_view(mtm: MainThreadMarker) -> Retained<NSVisualEffectView> {
     // SAFETY: `init` is `NSVisualEffectView`'s designated initializer.
@@ -17,9 +18,8 @@ pub fn header_material_view(mtm: MainThreadMarker) -> Retained<NSVisualEffectVie
     view
 }
 
-/// The bar's tint underneath the material — `WuiNavigationView`'s
-/// `applyBarColor` on macOS: the header's own layer takes the color, the
-/// material blends over it.
+/// The tint underneath the material: the view's own layer takes the
+/// color and the material blends over it.
 pub fn set_material_background(view: &NSVisualEffectView, color: Option<&objc2_app_kit::NSColor>) {
     view.setWantsLayer(true);
     if let Some(layer) = view.layer() {

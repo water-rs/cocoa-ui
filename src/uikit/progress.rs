@@ -85,8 +85,8 @@ impl Progress {
     }
 
     /// Whether the indicator animates instead of reporting a value — an
-    /// indeterminate linear reading draws the spinner, as `WuiProgress`
-    /// projected it.
+    /// indeterminate linear reading draws the spinner — `UIKit` has no
+    /// indeterminate bar.
     pub fn set_indeterminate(&self, indeterminate: bool) {
         self.indeterminate.set(indeterminate);
         self.update_indicators();

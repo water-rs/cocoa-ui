@@ -577,7 +577,7 @@ pub fn main_screen_scale() -> f64 {
 }
 
 /// Whether `window` could show a frame it was handed: visible and not
-/// occluded — `WuiSurfacePresentation`'s `!isPresentationOccluded`.
+/// occluded.
 #[must_use]
 pub fn is_visible(window: &NSWindow) -> bool {
     window.isVisible()
@@ -587,7 +587,7 @@ pub fn is_visible(window: &NSWindow) -> bool {
 }
 
 /// Calls `handler` on the main thread every time `window`'s occlusion state
-/// changes — `WuiWindowOcclusionObserver`.
+/// changes.
 ///
 /// # Panics
 ///

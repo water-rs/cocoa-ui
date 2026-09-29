@@ -47,7 +47,7 @@ pub enum Keyboard {
 }
 
 impl Keyboard {
-    /// The `UIKeyboardType` `WuiKeyboardType`'s table maps this kind onto.
+    /// The `UIKeyboardType` the kind maps onto.
     const fn native(self) -> UIKeyboardType {
         match self {
             Self::Text => UIKeyboardType::Default,
@@ -128,9 +128,8 @@ impl TextField {
         self.setEnabled(enabled);
     }
 
-    /// The height the input wants at `width` — `WuiTextField`'s measure:
-    /// the control's own answer floored at its intrinsic height, so the
-    /// field never reports shorter than a stock `UITextField` for its font.
+    /// The height the input wants at `width` — the control's `sizeThatFits:`
+    /// answer floored at its intrinsic height.
     #[must_use]
     pub fn measured_height(&self, width: f64) -> f64 {
         let fitting = self.sizeThatFits(CGSize {

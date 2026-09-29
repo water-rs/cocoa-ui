@@ -138,9 +138,8 @@ impl TextField {
         this
     }
 
-    /// Applies `line_limit` the way `WuiTextField.configureTextInput` does:
-    /// a single-line field scrolls inside its one line and never wraps; an
-    /// unlimited field wraps without a cap.
+    /// Applies `line_limit`: a single-line field scrolls inside its one
+    /// line and never wraps; an unlimited field wraps without a cap.
     pub fn set_line_limit(&self, line_limit: Option<usize>) {
         let single = line_limit == Some(1);
         self.setUsesSingleLineMode(single);
@@ -156,7 +155,7 @@ impl TextField {
     }
 
     /// The text the field currently holds — during editing, the field
-    /// editor's in-flight string, exactly `WuiTextField.editingString`.
+    /// editor's in-flight string.
     #[must_use]
     pub fn string(&self) -> String {
         if let Some(editor) = self.currentEditor() {
@@ -188,7 +187,7 @@ impl TextField {
     }
 
     /// The control's intrinsic height — the text share of a measure, as
-    /// `WuiTextField` reads `intrinsicContentSize` on `AppKit`.
+    /// `NSTextField.intrinsicContentSize`.
     #[must_use]
     pub fn measured_height(&self) -> f64 {
         self.intrinsicContentSize().height

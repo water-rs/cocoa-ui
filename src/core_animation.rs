@@ -338,7 +338,7 @@ pub fn animate_layer_transform(
     set_layer_transform(layer, transform);
     layer.addAnimation_forKey(&animation, Some(&NSString::from_str(key)));
 }
-/// Sets a layer's frame — the presentation plane updates `WuiGpuSurface`
+/// Sets a layer's frame — the presentation plane updates
 /// batches inside a transaction.
 pub fn set_frame(layer: &CALayer, frame: crate::geometry::Rect) {
     layer.setFrame(frame.into());

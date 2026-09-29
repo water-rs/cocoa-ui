@@ -16,7 +16,7 @@ use objc2_app_kit::{NSAnimationContext, NSView};
 
 /// Runs `changes` inside an `NSAnimationContext` group and calls
 /// `completion` when the animations settle — the cross-fade
-/// `WuiNavigationStack` performs between two pages.
+/// a navigation container performs between two pages.
 pub fn run_animation(changes: Rc<dyn Fn()>, completion: Rc<dyn Fn()>) {
     NSAnimationContext::runAnimationGroup_completionHandler(
         &RcBlock::new(move |_context| changes()),

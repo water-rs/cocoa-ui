@@ -173,7 +173,7 @@ impl ImageView {
     }
 
     /// The view's `accessibilityLabel`; an empty label also clears
-    /// `isAccessibilityElement` — `WuiPictureView`'s conditional pair.
+    /// `isAccessibilityElement` — the conditional pair.
     pub fn set_accessibility_label(&self, label: Option<&str>) {
         self.setAccessibilityElement(label.is_some());
         self.setAccessibilityLabel(label.map(NSString::from_str).as_deref());
