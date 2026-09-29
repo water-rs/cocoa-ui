@@ -33,6 +33,7 @@
 
 mod appearance;
 mod application;
+pub mod button;
 pub mod colors;
 mod host_view;
 pub mod image;
@@ -42,6 +43,7 @@ mod window;
 
 pub use appearance::ColorSchemeObservation;
 pub use application::{ActivationPolicy, Application, ApplicationHandlers};
+pub use button::Button;
 pub use colors::AppColor;
 pub use host_view::{HitTest, HostView};
 pub use image::ImageView;

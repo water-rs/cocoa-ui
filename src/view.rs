@@ -118,3 +118,51 @@ pub fn is_right_to_left(view: &PlatformView) -> bool {
         objc2::MainThreadMarker::from(view),
     ) == UIUserInterfaceLayoutDirection::RightToLeft
 }
+
+/// Fades `view` — and everything it contains — toward transparent, `1.0`
+/// being fully opaque.
+pub fn set_alpha(view: &PlatformView, alpha: f64) {
+    #[cfg(target_os = "macos")]
+    view.setAlphaValue(alpha);
+    #[cfg(target_os = "ios")]
+    view.setAlpha(alpha);
+}
+
+/// Declares `view` an accessibility element and gives it `label` (and, on
+/// `AppKit`, a tooltip of the same text). Pass text already stripped of
+/// bidirectional controls.
+pub fn set_accessibility_label(view: &PlatformView, label: &str) {
+    let label = objc2_foundation::NSString::from_str(label);
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSAccessibility;
+        view.setAccessibilityElement(true);
+        view.setAccessibilityLabel(Some(&label));
+        view.setToolTip(Some(&label));
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_ui_kit::NSObjectUIAccessibility;
+        let mtm = objc2::MainThreadMarker::from(view);
+        view.setIsAccessibilityElement(true, mtm);
+        view.setAccessibilityLabel(Some(&label), mtm);
+    }
+}
+
+/// Removes `view` and its whole subtree from the accessibility hierarchy:
+/// the chrome's own accessible element (say a button) then stands in for it.
+pub fn hide_from_accessibility(view: &PlatformView) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSAccessibility;
+        view.setAccessibilityElement(false);
+        // SAFETY: an ordinary main-thread `AppKit` accessibility setter;
+        // marked unsafe in the bindings.
+        unsafe { view.setAccessibilityChildren(Some(&objc2_foundation::NSArray::new())) };
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_ui_kit::NSObjectUIAccessibility;
+        view.setAccessibilityElementsHidden(true, objc2::MainThreadMarker::from(view));
+    }
+}

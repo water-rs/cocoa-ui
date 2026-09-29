@@ -35,8 +35,18 @@ pub struct ControlEvents(pub usize);
 
 #[cfg(target_os = "ios")]
 impl ControlEvents {
+    /// A touch went down inside the control.
+    pub const TOUCH_DOWN: Self = Self(1 << 0);
+    /// A drag entered the control's bounds.
+    pub const TOUCH_DRAG_ENTER: Self = Self(1 << 4);
+    /// A drag left the control's bounds.
+    pub const TOUCH_DRAG_EXIT: Self = Self(1 << 5);
     /// A touch lifted inside the control.
     pub const TOUCH_UP_INSIDE: Self = Self(1 << 6);
+    /// A touch lifted outside the control.
+    pub const TOUCH_UP_OUTSIDE: Self = Self(1 << 7);
+    /// The system cancelled the touch.
+    pub const TOUCH_CANCEL: Self = Self(1 << 8);
     /// The control's value changed (sliders, steppers, fields).
     pub const VALUE_CHANGED: Self = Self(1 << 12);
     /// The control's primary action (a button press).
@@ -45,7 +55,19 @@ impl ControlEvents {
     pub const EDITING_CHANGED: Self = Self(1 << 17);
     /// Every event.
     pub const ALL: Self = Self(0x00FF_FFFF);
+}
 
+#[cfg(target_os = "ios")]
+impl core::ops::BitOr for ControlEvents {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
+}
+
+#[cfg(target_os = "ios")]
+impl ControlEvents {
     const fn native(self) -> UIControlEvents {
         UIControlEvents(self.0)
     }

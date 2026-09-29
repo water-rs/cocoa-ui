@@ -32,6 +32,7 @@
 
 mod appearance;
 mod application;
+pub mod button;
 pub mod colors;
 mod host_view;
 pub mod image;
@@ -40,6 +41,7 @@ mod window;
 
 pub use appearance::{ColorSchemeObservation, current_scheme};
 pub use application::{ApplicationHandlers, WindowScene, run};
+pub use button::Button;
 pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
 pub use image::ImageView;
