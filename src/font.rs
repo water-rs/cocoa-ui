@@ -71,6 +71,23 @@ pub fn monospaced(_mtm: MainThreadMarker, size: f64, weight: f64) -> Retained<Fo
     Font::monospacedSystemFontOfSize_weight(size, weight)
 }
 
+/// The monospaced-digit system face at `size` and `weight` — tabular
+/// numerals for readouts whose digits must not drift.
+///
+/// A non-positive `size` resolves to [`system_size`].
+#[must_use]
+pub fn monospaced_digit(_mtm: MainThreadMarker, size: f64, weight: f64) -> Retained<Font> {
+    let size = if size <= 0.0 { system_size() } else { size };
+    #[cfg(target_os = "ios")]
+    {
+        UIFont::monospacedDigitSystemFontOfSize_weight(size, weight)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        NSFont::monospacedDigitSystemFontOfSize_weight(size, weight)
+    }
+}
+
 /// A face installed under PostScript or family `name`, at `size` points.
 ///
 /// `None` when the name does not resolve to a face this process can use.

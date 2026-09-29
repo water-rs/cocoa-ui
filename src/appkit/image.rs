@@ -48,6 +48,9 @@ define_class!(
     #[ivars = ImageViewIvars]
     #[derive(Debug)]
     /// An `NSImageView` used as an image leaf, with system-symbol helpers.
+    ///
+    /// See also [`system_symbol`] for the bare image a control's `image`
+    /// slot takes.
     pub struct ImageView;
 
     // SAFETY: `NSObjectProtocol` asks nothing of an `NSImageView` subclass.
@@ -158,4 +161,19 @@ impl ImageView {
         self.invalidateIntrinsicContentSize();
         crate::view::invalidate_layout(self);
     }
+}
+
+/// The named SF Symbol as an `NSImage`, for a control's `image` slot;
+/// `accessibility_description` names it for screen readers. `None` when
+/// the platform catalog has no symbol of that name.
+#[must_use]
+pub fn system_symbol(
+    name: &str,
+    accessibility_description: Option<&str>,
+) -> Option<Retained<NSImage>> {
+    let symbol = NSString::from_str(name);
+    NSImage::imageWithSystemSymbolName_accessibilityDescription(
+        &symbol,
+        accessibility_description.map(NSString::from_str).as_deref(),
+    )
 }

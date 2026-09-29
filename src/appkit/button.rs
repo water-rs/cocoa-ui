@@ -27,6 +27,7 @@ use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSAttributedString, NSObjectProtocol, NSString};
 
 use crate::callback::guarded;
+use crate::geometry::Size;
 
 type PressHandler = Rc<dyn Fn(&Button, bool)>;
 
@@ -170,6 +171,21 @@ impl Button {
         self.setAttributedTitle(title);
     }
 
+    /// Shows the named SF Symbol as an icon-only button's content and
+    /// clears any title — `accessibility_description` names the glyph for
+    /// screen readers. Returns `false` when the platform catalog has no
+    /// symbol of that name.
+    pub fn set_symbol(&self, name: &str, accessibility_description: &str) -> bool {
+        let Some(image) =
+            crate::appkit::image::system_symbol(name, Some(accessibility_description))
+        else {
+            return false;
+        };
+        self.setImage(Some(&image));
+        self.setTitle(&NSString::new());
+        true
+    }
+
     /// How far the bezel keeps content from the button's edge, read from the
     /// button cell's drawing rect for a reference-size button: the owning
     /// layout supplies this padding itself, like `NSButton`'s own layout.
@@ -206,6 +222,18 @@ impl Button {
         if let Some(window) = self.window() {
             window.invalidateCursorRectsForView(self);
         }
+    }
+
+    /// The button's intrinsic size — what a measure pass reports.
+    #[must_use]
+    pub fn intrinsic_size(&self) -> Size {
+        let size = self.intrinsicContentSize();
+        Size::new(size.width, size.height)
+    }
+
+    /// Names the button to a screen reader; `None` leaves it unnamed.
+    pub fn set_accessibility_label(&self, label: Option<&str>) {
+        self.setAccessibilityLabel(label.map(NSString::from_str).as_deref());
     }
 
     /// Calls `handler` when the press state changes: `true` on mouse down,
