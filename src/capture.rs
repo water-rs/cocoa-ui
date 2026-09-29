@@ -762,7 +762,7 @@ impl NativeRenderer {
             unsafe { renderer.setDestination(texture) };
             renderer
         } else {
-            let color_space = crate::metal::surface_color_space(texture.pixelFormat());
+            let color_space = crate::metal::color_space(texture.pixelFormat());
             // SAFETY: `CARenderer`'s option keys are system statics.
             let keys: [&NSString; 2] = unsafe {
                 [

@@ -134,14 +134,13 @@ fn surface_format(format: MTLPixelFormat) -> (u32, usize) {
     }
 }
 
-/// The colour space the compositor must read the surface in, serialized for
-/// `IOSurfaceSetValue`.
+/// The colour space the compositor must read the surface in.
 ///
 /// Core Animation has no other way to learn it: a plain `CALayer` carries no
 /// colour space of its own, so an extended-range surface left unlabelled is
 /// composited as if its values were display-referred sRGB and an HDR frame
 /// comes out clipped and dark.
-pub(crate) fn surface_color_space(format: MTLPixelFormat) -> CFRetained<CFType> {
+pub(crate) fn color_space(format: MTLPixelFormat) -> CFRetained<CGColorSpace> {
     let name = if format == MTLPixelFormat::RGBA16Float {
         // SAFETY: the colorspace statics are system constants.
         unsafe { kCGColorSpaceExtendedLinearSRGB }
@@ -149,9 +148,16 @@ pub(crate) fn surface_color_space(format: MTLPixelFormat) -> CFRetained<CFType> 
         // SAFETY: see above.
         unsafe { kCGColorSpaceSRGB }
     };
-    let space =
-        CGColorSpace::with_name(Some(name)).expect("could not create the surface color space");
-    space
+    CGColorSpace::with_name(Some(name)).expect("could not create the surface color space")
+}
+
+/// The colour space the compositor must read the surface in, serialized for
+/// `IOSurfaceSetValue`.
+///
+/// `kIOSurfaceColorSpace` takes the serialized property list, unlike
+/// `kCARendererColorSpace`, which takes the `CGColorSpace` itself.
+pub(crate) fn surface_color_space(format: MTLPixelFormat) -> CFRetained<CFType> {
+    color_space(format)
         .property_list()
         .expect("could not serialize the surface color space")
 }
