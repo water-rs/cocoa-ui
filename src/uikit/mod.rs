@@ -33,6 +33,8 @@
 mod appearance;
 mod application;
 pub mod button;
+pub mod color_well;
+pub use color_well::ColorWell;
 pub mod colors;
 mod host_view;
 pub mod image;
@@ -46,6 +48,8 @@ pub use colors::UiColor;
 pub use host_view::{HitTest, HostView};
 pub use image::ImageView;
 pub mod label;
+mod picker;
+pub use picker::Picker;
 pub mod toggle;
 pub use label::Label;
 mod slider;

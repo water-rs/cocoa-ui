@@ -11,7 +11,9 @@
 //! under a trait collection — documented API, on the calling thread.
 
 use objc2::rc::Retained;
-use objc2_core_graphics::{CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
+use objc2_core_graphics::{
+    CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB, kCGColorSpaceLinearSRGB,
+};
 use objc2_foundation::NSString;
 use objc2_ui_kit::{UIColor, UITraitCollection, UIUserInterfaceStyle};
 
@@ -99,6 +101,30 @@ pub fn extended_linear(
 #[must_use]
 pub fn placeholder_text() -> Retained<UIColor> {
     UIColor::placeholderTextColor()
+}
+
+/// A color in the linear sRGB space: `red`, `green` and `blue` are sRGB
+/// components, clamped to `0.0…1.0` — the SDR-only counterpart of
+/// [`extended_linear`].
+///
+/// # Panics
+///
+/// Never in practice: linear sRGB and four components always make a color;
+/// the `expect` only covers a platform that does not.
+#[must_use]
+pub fn linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<UIColor> {
+    let components = [
+        red.clamp(0.0, 1.0),
+        green.clamp(0.0, 1.0),
+        blue.clamp(0.0, 1.0),
+        alpha.clamp(0.0, 1.0),
+    ];
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceLinearSRGB }));
+    // SAFETY: `components` points at four f64s, the count sRGB takes.
+    let cg = unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
+        .expect("linear sRGB and four components always make a color");
+    UIColor::colorWithCGColor(&cg)
 }
 
 /// What `color` draws as under `scheme`.

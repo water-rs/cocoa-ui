@@ -17,7 +17,9 @@ use objc2::rc::Retained;
 use objc2_app_kit::{
     NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSColor, NSColorSpace,
 };
-use objc2_core_graphics::{CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
+use objc2_core_graphics::{
+    CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB, kCGColorSpaceLinearSRGB,
+};
 
 use crate::color::Rgba;
 use crate::color_scheme::ColorScheme;
@@ -96,6 +98,72 @@ pub fn extended_linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<
 #[must_use]
 pub fn placeholder_text() -> Retained<NSColor> {
     NSColor::placeholderTextColor()
+}
+
+/// A color in the linear sRGB space: `red`, `green` and `blue` are sRGB
+/// components, clamped to `0.0…1.0` — the SDR-only counterpart of
+/// [`extended_linear`].
+///
+/// # Panics
+///
+/// Never in practice: linear sRGB and four components always make a color,
+/// and the `expect`s only cover a platform that does not.
+#[must_use]
+pub fn linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<NSColor> {
+    let components = [
+        red.clamp(0.0, 1.0),
+        green.clamp(0.0, 1.0),
+        blue.clamp(0.0, 1.0),
+        alpha.clamp(0.0, 1.0),
+    ];
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceLinearSRGB }));
+    // SAFETY: `components` points at four f64s, the count sRGB takes.
+    let cg = unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
+        .expect("linear sRGB and four components always make a color");
+    NSColor::colorWithCGColor(&cg).expect("every linear-sRGB CGColor becomes an NSColor")
+}
+
+/// `color` split into the SDR base it was exposed from and the HDR headroom
+/// it carries — `linearExposure − 1`, `0` for ordinary colors.
+#[must_use]
+pub fn sdr_base_and_headroom(color: &NSColor) -> (Retained<NSColor>, f64) {
+    let exposure = color.linearExposure();
+    if exposure > 1.0 {
+        (color.standardDynamicRangeColor(), exposure - 1.0)
+    } else {
+        (color.into(), 0.0)
+    }
+}
+
+/// `color` converted into the extended sRGB — or plain sRGB — space and
+/// read as components, using the appearance in effect at this moment.
+///
+/// `None` only for a color with no sRGB form at all, like a pattern image.
+#[must_use]
+pub fn srgb_components(color: &NSColor) -> Option<Rgba> {
+    rgba_in(color, &NSColorSpace::extendedSRGBColorSpace())
+        .or_else(|| rgba_in(color, &NSColorSpace::sRGBColorSpace()))
+}
+
+/// `color` converted into `space` and read as components.
+fn rgba_in(color: &NSColor, space: &NSColorSpace) -> Option<Rgba> {
+    let converted = color.colorUsingColorSpace(space)?;
+    // SAFETY: the component accessors are valid on a converted color, and
+    // the out pointers point at locals that outlive the call.
+    unsafe {
+        let mut red = 0.0;
+        let mut green = 0.0;
+        let mut blue = 0.0;
+        let mut alpha = 0.0;
+        converted.getRed_green_blue_alpha(
+            &raw mut red,
+            &raw mut green,
+            &raw mut blue,
+            &raw mut alpha,
+        );
+        Some(Rgba::new(red, green, blue, alpha))
+    }
 }
 
 /// `color` reinterpreted as HDR content: components keep their values while

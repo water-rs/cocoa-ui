@@ -68,6 +68,7 @@ pub mod locale;
 pub mod log;
 pub mod main_queue;
 pub mod notification;
+pub mod picker;
 pub mod process;
 pub mod progress;
 pub mod slider;
