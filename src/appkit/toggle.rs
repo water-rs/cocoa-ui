@@ -77,7 +77,7 @@ impl fmt::Debug for Control {
 ///
 /// The container is what the leaf mounts and lays out; the control is what
 /// user interaction and accessibility target.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Toggle {
     container: Retained<NSView>,
     control: Control,
