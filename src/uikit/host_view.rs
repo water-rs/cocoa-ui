@@ -400,10 +400,14 @@ define_class!(
                         unconsumed.addObject(&press);
                     }
                 }
-                // SAFETY: see the module safety note.
-                unsafe {
-                    let _: () =
-                        msg_send![super(self), pressesBegan: &*unconsumed, withEvent: event];
+                // A key event where every press was consumed is fully
+                // handled; only the leftover presses reach `super`.
+                if unconsumed.count() != 0 {
+                    // SAFETY: see the module safety note.
+                    unsafe {
+                        let _: () =
+                            msg_send![super(self), pressesBegan: &*unconsumed, withEvent: event];
+                    }
                 }
             });
         }

@@ -189,6 +189,14 @@ mod imp {
         view.setAccessibilityValue(Some(value), mtm);
     }
 
+    /// Gives `view` the stable automation identifier UI tests locate it
+    /// by — `accessibilityIdentifier`.
+    pub fn set_identifier(view: &UIView, identifier: &NSString) {
+        // SAFETY: `setAccessibilityIdentifier:` is `NSObject`'s
+        // `UIAccessibilityIdentification` method, available on every view.
+        unsafe { () = objc2::msg_send![view, setAccessibilityIdentifier: identifier] }
+    }
+
     /// Hides or unhides `view` and its descendants.
     pub fn set_hidden(view: &UIView, hidden: bool) {
         view.setAccessibilityElementsHidden(hidden, objc2::MainThreadMarker::from(view));
@@ -354,6 +362,12 @@ mod imp {
         element.setAccessibilityElement(true);
         // SAFETY: `NSString` is a valid property-list object.
         unsafe { element.setAccessibilityValue(Some(AsRef::<AnyObject>::as_ref(value))) };
+    }
+
+    /// Gives `element` the stable automation identifier UI tests locate
+    /// it by — `accessibilityIdentifier`.
+    pub fn set_identifier(element: &ProtocolObject<dyn NSAccessibility>, identifier: &NSString) {
+        element.setAccessibilityIdentifier(Some(identifier));
     }
 
     /// Hides or unhides `element`: hiding removes it from the
