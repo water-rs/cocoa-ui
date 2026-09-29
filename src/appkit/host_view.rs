@@ -309,7 +309,6 @@ impl HostView {
         self.ivars().window.replace(Some(Rc::new(handler)));
     }
 
-<<<<<<< HEAD
     /// Calls `handler` every time the view moves into or out of a superview —
     /// `viewDidMoveToSuperview`, the point where an enclosing scroll surface
     /// may have changed.
