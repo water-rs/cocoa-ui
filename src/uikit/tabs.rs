@@ -23,7 +23,7 @@ use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_foundation::{NSArray, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
-    UIImage, UITabBarController, UITabBarControllerDelegate, UIView, UIViewController,
+    UIImage, UITabBarController, UITabBarControllerDelegate, UITabBarItem, UIView, UIViewController,
 };
 
 /// One tab's content.
@@ -206,6 +206,26 @@ impl TabsController {
             )),
             false,
         );
+    }
+
+    /// The `UITabBarItem` of the installed tab at `index`.
+    ///
+    /// Reactive chrome mutates the item in place: rebuilding the
+    /// `viewControllers` array for a badge tick re-parents each pane view,
+    /// which `UIViewController` rejects while the view is still another
+    /// controller's `view`.
+    ///
+    /// # Panics
+    /// Panics when `index` is out of range.
+    #[must_use]
+    pub fn tab_item(&self, index: usize) -> Retained<UITabBarItem> {
+        let controllers = self.viewControllers().expect("tabs are installed");
+        controllers
+            .objectAtIndex(index)
+            .downcast::<TabContentController>()
+            .expect("tab controllers are CocoaUiTabContentController")
+            .tabBarItem()
+            .expect("a tab content controller always has a tab bar item")
     }
 
     /// The selected tab's index; `None` when nothing is selected.
