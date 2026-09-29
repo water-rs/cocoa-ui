@@ -124,6 +124,7 @@ impl Application {
     /// Returns whether `AppKit` accepted the change. The system can refuse
     /// during early startup even for a well-formed app, so callers treat it
     /// as best-effort — the bundle's `Info.plist` policy still applies.
+    #[must_use]
     pub fn set_activation_policy(&self, policy: ActivationPolicy) -> bool {
         self.app.setActivationPolicy(policy.native())
     }
