@@ -195,6 +195,31 @@ objc2-map-kit = { version = "0.3", default-features = false, features = [
     "objc2-core-location",
     "block2",
 ] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "dispatch2",
+    "objc2-core-media",
+    "objc2-core-foundation",
+    "objc2-quartz-core",
+    "AVAnimation",
+    "AVAsynchronousKeyValueLoading",
+    "AVAsset",
+    "AVAssetVariant",
+    "AVAudioProcessingSettings",
+    "AVError",
+    "AVMediaFormat",
+    "AVMediaSelectionGroup",
+    "AVPlayer",
+    "AVPlayerItem",
+    "AVPlayerLayer",
+    "AVTime",
+] }
+objc2-core-media = { version = "0.3", default-features = false, features = [
+    "std",
+    "CMTime",
+    "CMTimeRange",
+] }
 kurbo = { version = "0.12" }
 wgpu = { version = "29", default-features = false }
 wgpu-hal = { version = "29", default-features = false, features = [
@@ -211,6 +236,12 @@ mach2 = "0.7"
 # `MKMapView` and `MKOverlayLevel` are `AppKit`-side types in
 # `objc2-map-kit`; `UIKit` gets a hand-declared binding in `map.rs`.
 objc2-map-kit = { version = "0.3", features = ["objc2-app-kit"] }
+objc2-av-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-app-kit",
+    "objc2-av-foundation",
+    "AVPlayerView",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-foundation",

@@ -55,6 +55,7 @@ pub mod accessibility;
 pub mod action;
 #[cfg(target_os = "macos")]
 pub mod appkit;
+pub mod avkit;
 pub mod bitmap;
 pub mod bundle;
 mod callback;
@@ -125,8 +126,12 @@ pub use objc2::rc::Retained;
 /// consumer never pins it separately.
 #[cfg(target_os = "macos")]
 pub use objc2_app_kit;
+pub use objc2_av_foundation;
+#[cfg(target_os = "macos")]
+pub use objc2_av_kit;
 pub use objc2_core_foundation;
 pub use objc2_core_graphics;
+pub use objc2_core_media;
 pub use objc2_metal;
 pub use objc2_quartz_core;
 pub use objc2_security;
