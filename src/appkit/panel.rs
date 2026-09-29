@@ -29,9 +29,7 @@ pub struct Panel {
 
 impl std::fmt::Debug for Panel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Panel")
-            .field("panel", &self.panel)
-            .finish()
+        f.debug_struct("Panel").field("panel", &self.panel).finish()
     }
 }
 
@@ -146,5 +144,3 @@ pub fn view_frame_did_change_notification() -> crate::notification::Notification
     let name: &'static NSString = unsafe { objc2_app_kit::NSViewFrameDidChangeNotification };
     crate::notification::NotificationName::framework(name)
 }
-
-

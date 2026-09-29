@@ -61,7 +61,8 @@ pub fn on_mouse_down(handler: impl Fn(Option<&NSWindow>) + 'static) -> LocalEven
         });
         event.as_ptr()
     });
-    let mask = NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+    let mask =
+        NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
     // SAFETY: see the module safety note.
     let token = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
     LocalEventMonitor {

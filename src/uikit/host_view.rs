@@ -89,7 +89,7 @@ impl fmt::Debug for HostViewIvars {
             .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("manages_safe_area", &self.manages_safe_area.get())
             .field("intrinsic_auto_layout", &self.intrinsic_auto_layout.get())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
