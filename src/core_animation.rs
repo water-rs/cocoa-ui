@@ -12,6 +12,28 @@ pub fn flush_transaction() {
     CATransaction::flush();
 }
 
+/// Runs `body` when the current implicit transaction commits.
+///
+/// Commit is the boundary after which a layer added this transaction is on
+/// screen, so an animation started then animates from its initial value
+/// instead of landing already at its end state. `CATransaction` replaces any
+/// completion block already installed, as the framework's own setter does.
+pub fn on_commit(body: impl FnOnce() + 'static) {
+    use std::cell::RefCell;
+
+    // The completion block is `Fn`, but Core Animation evaluates it once;
+    // the option still guards a double evaluation.
+    let body = RefCell::new(Some(body));
+    let block = block2::RcBlock::new(move || {
+        if let Some(body) = body.borrow_mut().take() {
+            body();
+        }
+    });
+    // SAFETY: the block lives in the transaction, which calls it once on
+    // commit and releases it afterwards.
+    unsafe { CATransaction::setCompletionBlock(Some(&block)) };
+}
+
 /// Runs `body` inside an `NSAnimationContext` group.
 ///
 /// Animatable property changes `body` makes animate over `duration` seconds

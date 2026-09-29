@@ -133,6 +133,57 @@ impl EdgeInsets {
     }
 }
 
+/// Which of a view's four edges a flag applies to.
+///
+/// The kit stores `Edges` as a bitmask when a sibling backend reads it
+/// through the `cocoaUiIgnoredSafeAreaEdges` selector: bit 0 top, bit 1
+/// leading, bit 2 bottom, bit 3 trailing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct Edges {
+    /// The top edge.
+    pub top: bool,
+    /// The leading edge — left in a left-to-right layout.
+    pub leading: bool,
+    /// The bottom edge.
+    pub bottom: bool,
+    /// The trailing edge — right in a left-to-right layout.
+    pub trailing: bool,
+}
+
+impl Edges {
+    /// No edges set.
+    pub const NONE: Self = Self::new(false, false, false, false);
+
+    /// Every edge set.
+    pub const ALL: Self = Self::new(true, true, true, true);
+
+    /// `Edges` of `top`, `leading`, `bottom` and `trailing`.
+    #[must_use]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "each edge is an independent on/off, the memberwise form `EdgeSet` itself spells"
+    )]
+    pub const fn new(top: bool, leading: bool, bottom: bool, trailing: bool) -> Self {
+        Self {
+            top,
+            leading,
+            bottom,
+            trailing,
+        }
+    }
+
+    /// The bitmask `cocoaUiIgnoredSafeAreaEdges` reports: bit 0 top, bit 1
+    /// leading, bit 2 bottom, bit 3 trailing.
+    #[must_use]
+    pub const fn mask(self) -> u8 {
+        (self.top as u8)
+            | ((self.leading as u8) << 1)
+            | ((self.bottom as u8) << 2)
+            | ((self.trailing as u8) << 3)
+    }
+}
+
 impl From<CGPoint> for Point {
     fn from(point: CGPoint) -> Self {
         Self::new(point.x, point.y)

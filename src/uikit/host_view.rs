@@ -19,7 +19,7 @@ use objc2_foundation::{NSArray, NSObjectProtocol};
 use objc2_ui_kit::{UIEdgeInsets, UIEvent, UITraitEnvironment, UIView};
 
 use crate::callback::guarded;
-use crate::geometry::{EdgeInsets, MeasureProposal, Point, Rect, Size};
+use crate::geometry::{EdgeInsets, Edges, MeasureProposal, Point, Rect, Size};
 
 /// What a [`HostView`]'s hit-test handler decides for a point.
 #[derive(Debug, Clone)]
@@ -58,6 +58,11 @@ pub struct HostViewIvars {
     /// Whether the view's own content is laid out against its bounds — the
     /// answer to "does this view manage its own safe area".
     manages_safe_area: Cell<bool>,
+    /// The edges this view erases from the safe-area insets its subtree
+    /// sees — what `cocoaUiIgnoredSafeAreaEdges` reports: bits 0–3 the
+    /// `Edges` mask, bit 4 marking the view an ignore-safe-area wrapper so
+    /// a reader can tell "ignores nothing" from "not an ignorer".
+    ignored_safe_area_edges: Cell<u8>,
     /// Whether the Auto Layout width is tracked for intrinsic size; see
     /// [`set_intrinsic_auto_layout`](HostView::set_intrinsic_auto_layout).
     intrinsic_auto_layout: Cell<bool>,
@@ -85,6 +90,10 @@ impl fmt::Debug for HostViewIvars {
             .field(
                 "scroll_surface_candidates",
                 &self.scroll_surface_candidates.borrow().is_some(),
+            )
+            .field(
+                "ignored_safe_area_edges",
+                &self.ignored_safe_area_edges.get(),
             )
             .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("manages_safe_area", &self.manages_safe_area.get())
@@ -200,6 +209,15 @@ define_class!(
         #[unsafe(method(cocoaUiManagesSafeArea))]
         fn manages_safe_area_override(&self) -> bool {
             self.ivars().manages_safe_area.get()
+        }
+
+        // SAFETY: see the module safety note. Exposed under a `cocoaUi`
+        // selector for the sibling backend's safe-area erasure; it reads an
+        // ivar and performs no layout. Bits 0–3 are the `Edges` mask, bit 4
+        // marks the view an ignore-safe-area wrapper.
+        #[unsafe(method(cocoaUiIgnoredSafeAreaEdges))]
+        fn ignored_safe_area_edges_override(&self) -> isize {
+            isize::from(self.ivars().ignored_safe_area_edges.get())
         }
 
         // SAFETY: see the module safety note. Exposed under a `cocoaUi`
@@ -349,6 +367,18 @@ impl HostView {
     /// `cocoaUiManagesSafeArea` selector.
     pub fn set_manages_safe_area(&self, manages: bool) {
         self.ivars().manages_safe_area.set(manages);
+    }
+
+    /// The edges this view erases from the safe-area insets its subtree
+    /// sees — what an ignore-safe-area wrapper reports through the
+    /// `cocoaUiIgnoredSafeAreaEdges` selector the sibling backend's
+    /// safe-area rect consults on its ancestor walk. Setting the marks
+    /// bit 4, so a wrapper that ignores no edge still answers as an
+    /// ignorer.
+    pub fn set_ignored_safe_area_edges(&self, edges: Edges) {
+        self.ivars()
+            .ignored_safe_area_edges
+            .set(edges.mask() | 0x10);
     }
 
     /// The primary content the sibling backend's wrappers descend to — the

@@ -92,6 +92,7 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = [
     "CAMediaTimingFunction",
     "objc2-core-foundation",
     "objc2-core-graphics",
+    "block2",
 ] }
 # `os_log` is a family of C macros; this crate compiles the one-line wrapper
 # that forwards a preformatted `%{public}s` message through them.

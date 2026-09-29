@@ -322,6 +322,23 @@ pub fn set_user_interaction_enabled(view: &PlatformView, enabled: bool) {
     view.setUserInteractionEnabled(enabled);
 }
 
+/// The color `view` and the controls inside it tint with — `UIView`'s
+/// `tintColor`, inherited down the view tree until a subview overrides it.
+#[cfg(target_os = "ios")]
+pub fn set_tint_color(view: &PlatformView, color: Option<&objc2_ui_kit::UIColor>) {
+    // SAFETY: see the module safety note. `tintColor` takes nil.
+    unsafe { view.setTintColor(color) };
+}
+
+/// Whether `view`'s layout margins get their own inset from the safe area.
+///
+/// `UIView`'s `insetsLayoutMarginsFromSafeArea`; a wrapper that manages the
+/// safe area itself turns it off so the platform does not double-inset.
+#[cfg(target_os = "ios")]
+pub fn set_insets_layout_margins_from_safe_area(view: &PlatformView, insets: bool) {
+    view.setInsetsLayoutMarginsFromSafeArea(insets);
+}
+
 /// Makes `parent`'s subviews exactly `ordered`, in that z-order, reusing the
 /// subview instances already attached.
 #[cfg(target_os = "macos")]
