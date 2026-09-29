@@ -81,6 +81,7 @@ pub use navigation::{
 };
 pub use search_bar::SearchBar;
 pub use split::{ColumnWidth, SplitColumnController, SplitController};
+pub mod table;
 pub use stepper::Stepper;
 pub use tabs::{TabContentController, TabSpec, TabsController};
 pub use text_field::{SecureField, TextField};

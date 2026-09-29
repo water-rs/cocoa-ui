@@ -270,3 +270,13 @@ mod tests {
         assert_eq!(Rect::ZERO, Rect::default());
     }
 }
+
+/// A two-component `(section, row)` coordinate a table view hands its
+/// callbacks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct IndexPath {
+    /// The section component.
+    pub section: usize,
+    /// The row component.
+    pub row: usize,
+}

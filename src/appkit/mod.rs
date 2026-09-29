@@ -89,7 +89,9 @@ mod scroll;
 pub use scroll::ScrollView;
 mod stepper;
 pub use stepper::Stepper;
-pub use table::TableView;
+pub use table::{
+    DeleteButton, RowContainer, SectionHeader, SectionKind, TableRowView, TableSource, TableView,
+};
 pub mod text_field;
 pub use popup_button::PopUpButton;
 pub use search_field::SearchField;

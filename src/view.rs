@@ -281,6 +281,20 @@ pub fn set_clips_to_bounds(view: &PlatformView, clips: bool) {
     view.setClipsToBounds(clips);
 }
 
+/// The primary content view `view` exposes through `cocoaUiPrimaryContent`,
+/// if it answers that selector — the child a kit host view surfaces for
+/// chrome like list cells and scroll surfaces; `None` otherwise.
+#[must_use]
+pub fn primary_content(view: &PlatformView) -> Option<Retained<PlatformView>> {
+    if view.respondsToSelector(objc2::sel!(cocoaUiPrimaryContent)) {
+        // SAFETY: every kit class implementing `cocoaUiPrimaryContent`
+        // declares it `-> Option<Retained<PlatformView>>`.
+        unsafe { objc2::msg_send![view, cocoaUiPrimaryContent] }
+    } else {
+        None
+    }
+}
+
 /// Whether `view` sizes itself by its frame rather than by Auto Layout
 /// constraints — `true` for views a layout container positions manually.
 pub fn set_translates_autoresizing(view: &PlatformView, enabled: bool) {
