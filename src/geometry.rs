@@ -145,6 +145,12 @@ impl From<Point> for CGPoint {
     }
 }
 
+impl From<objc2_foundation::NSEdgeInsets> for EdgeInsets {
+    fn from(insets: objc2_foundation::NSEdgeInsets) -> Self {
+        Self::new(insets.top, insets.left, insets.bottom, insets.right)
+    }
+}
+
 impl From<CGSize> for Size {
     fn from(size: CGSize) -> Self {
         Self::new(size.width, size.height)

@@ -177,3 +177,10 @@ pub fn system_symbol(
         accessibility_description.map(NSString::from_str).as_deref(),
     )
 }
+
+/// The named `SF Symbol` as a shareable `NSImage` — for chrome that draws
+/// symbols outside an [`ImageView`] (toolbar items, menu rows).
+#[must_use]
+pub fn symbol_image(name: &str) -> Option<Retained<NSImage>> {
+    system_symbol(name, None)
+}

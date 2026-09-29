@@ -119,6 +119,21 @@ impl Label {
         this
     }
 
+    /// A plain-string replacement — no attributes, drawn with the label's
+    /// own style.
+    pub fn set_text(&self, text: &str) {
+        let string = NSString::from_str(text);
+        // SAFETY: `initWithString:` is `NSAttributedString`'s plain-string
+        // designated initializer; `string` outlives the call.
+        let attributed: Retained<NSAttributedString> = unsafe {
+            msg_send![
+                <NSAttributedString as objc2::AnyThread>::alloc(),
+                initWithString: &*string
+            ]
+        };
+        self.set_attributed_text(&attributed);
+    }
+
     /// Replaces the text the label draws, and reports that its size changed.
     pub fn set_attributed_text(&self, text: &NSAttributedString) {
         self.ivars().source_text.replace(Some(text.into()));

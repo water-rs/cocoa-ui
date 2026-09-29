@@ -42,6 +42,7 @@ type WindowHandler = Rc<dyn Fn(&HostView)>;
 type MeasureHandler = Rc<dyn Fn(&HostView, MeasureProposal) -> Size>;
 type PrimaryContentHandler = Rc<dyn Fn(&HostView) -> Option<Retained<NSView>>>;
 type ScrollSurfaceHandler = Rc<dyn Fn(&HostView) -> Vec<Retained<NSView>>>;
+type HiddenHandler = Rc<dyn Fn(&HostView, bool)>;
 
 /// The handlers a [`HostView`] calls.
 #[derive(Default)]
@@ -54,6 +55,7 @@ pub struct HostViewIvars {
     measure: RefCell<Option<MeasureHandler>>,
     primary_content: RefCell<Option<PrimaryContentHandler>>,
     scroll_surface_candidates: RefCell<Option<ScrollSurfaceHandler>>,
+    hidden: RefCell<Option<HiddenHandler>>,
     /// Whether the view's own content is laid out against its bounds — the
     /// answer to "does this view manage its own safe area".
     manages_safe_area: std::cell::Cell<bool>,
@@ -77,6 +79,7 @@ impl fmt::Debug for HostViewIvars {
                 &self.scroll_surface_candidates.borrow().is_some(),
             )
             .field("primary_content", &self.primary_content.borrow().is_some())
+            .field("hidden", &self.hidden.borrow().is_some())
             .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("measure", &self.measure.borrow().is_some())
             .field("manages_safe_area", &self.manages_safe_area.get())
@@ -218,6 +221,19 @@ define_class!(
         }
 
         // SAFETY: see the module safety note.
+        #[unsafe(method(setHidden:))]
+        fn set_hidden_override(&self, hidden: bool) {
+            guarded("HostView setHidden:", || {
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), setHidden: hidden] };
+                let handler = self.ivars().hidden.borrow().clone();
+                if let Some(handler) = handler {
+                    handler(self, hidden);
+                }
+            });
+        }
+
+        // SAFETY: see the module safety note.
         #[unsafe(method(viewDidMoveToWindow))]
         fn view_did_move_to_window_override(&self) {
             guarded("HostView viewDidMoveToWindow", || {
@@ -293,6 +309,7 @@ impl HostView {
         self.ivars().window.replace(Some(Rc::new(handler)));
     }
 
+<<<<<<< HEAD
     /// Calls `handler` every time the view moves into or out of a superview —
     /// `viewDidMoveToSuperview`, the point where an enclosing scroll surface
     /// may have changed.
@@ -344,6 +361,13 @@ impl HostView {
         self.ivars()
             .scroll_surface_candidates
             .replace(Some(Rc::new(handler)));
+    }
+
+    /// Runs `handler` when the view's `isHidden` flag changes — how a tab
+    /// container tells a navigation stack inside the hidden page to release
+    /// the window toolbar, `setNavigationChromeActive(_:)`'s equivalent.
+    pub fn set_hidden_handler(&self, handler: impl Fn(&Self, bool) + 'static) {
+        self.ivars().hidden.replace(Some(Rc::new(handler)));
     }
 
     /// Adds `view` above the existing subviews.

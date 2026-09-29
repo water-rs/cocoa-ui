@@ -88,6 +88,17 @@ impl Button {
         unsafe { self.inner.setTintColor(Some(color)) };
     }
 
+    /// Presents `menu` on interaction, replacing the button's own action.
+    pub fn set_menu(&self, menu: Option<&objc2_ui_kit::UIMenu>) {
+        self.inner.setMenu(menu);
+    }
+
+    /// Whether a touch-down opens the menu instead of firing the action —
+    /// `showsMenuAsPrimaryAction`.
+    pub fn set_shows_menu_as_primary_action(&self, shows: bool) {
+        self.inner.setShowsMenuAsPrimaryAction(shows);
+    }
+
     /// Draws `chrome` around the label with zero added content padding: the
     /// owning layout supplies the padding it measured with
     /// [`Self::chrome_content_insets`].

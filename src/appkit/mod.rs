@@ -31,28 +31,34 @@
 //! );
 //! ```
 
+mod animate;
 mod appearance;
 mod application;
 pub mod button;
 mod color_view;
 mod color_well;
 pub mod colors;
+mod control;
 mod date_picker;
+mod effect_view;
 mod host_view;
 pub mod image;
 mod menu;
 mod view_controller;
 mod window;
 
+pub use animate::{run_animation, set_animated_alpha};
 pub use appearance::ColorSchemeObservation;
 pub use application::{ActivationPolicy, Application, ApplicationHandlers};
 pub use button::Button;
 pub use color_view::ColorView;
 pub use color_well::ColorWell;
 pub use colors::AppColor;
+pub use control::{activate, first_control};
 pub use date_picker::{DatePicker, DatePickerElements};
+pub use effect_view::{header_material_view, set_material_background};
 pub use host_view::{HitTest, HostView};
-pub use image::ImageView;
+pub use image::{ImageView, symbol_image};
 pub mod label;
 mod picker;
 pub use picker::Picker;

@@ -66,6 +66,13 @@ pub use progress::Progress;
 mod scroll;
 pub use scroll::ScrollView;
 mod stepper;
+pub use menu::{elements, menu};
+pub use navigation::{
+    BarButton, LargeTitle, NavBar, NavContentController, NavPage, NavSearch, NavigationController,
+    SearchUpdater, bar_item, bar_item_accessibility_label, first_control,
+};
+pub use search_bar::SearchBar;
+pub use split::{ColumnWidth, SplitColumnController, SplitController};
 pub use stepper::Stepper;
 pub use text_field::{SecureField, TextField};
 pub use view_controller::ViewController;
