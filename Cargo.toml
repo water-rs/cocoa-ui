@@ -229,6 +229,7 @@ bitflags = "2"
 objc2-ui-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-foundation",
+    "objc2-quartz-core",
     "UIApplication",
     "UIColor",
     "UIControl",

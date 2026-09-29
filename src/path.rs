@@ -548,3 +548,97 @@ pub fn border_path(
     }
     path.immutable()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bounds_of(path: &CGPath) -> Rect {
+        CGPath::bounding_box(Some(path)).into()
+    }
+
+    #[test]
+    fn rect_shape_fills_its_rect() {
+        let rect = Rect::new(10.0, 20.0, 100.0, 50.0);
+        let path = shape_path(ShapeKind::Rect, &[], rect);
+        assert_eq!(bounds_of(&path), rect);
+    }
+
+    #[test]
+    fn circle_is_the_centered_inscribed_square() {
+        let rect = Rect::new(0.0, 0.0, 200.0, 80.0);
+        let path = shape_path(ShapeKind::Circle, &[], rect);
+        let bounds = bounds_of(&path);
+        assert!((bounds.size.width - 80.0).abs() < 1.0);
+        assert!((bounds.size.height - 80.0).abs() < 1.0);
+        assert!((bounds.origin.x - 60.0).abs() < 1.0);
+        assert!(bounds.origin.y.abs() < 1.0);
+    }
+
+    #[test]
+    fn uneven_rounded_rect_covers_the_rect() {
+        let rect = Rect::new(0.0, 0.0, 120.0, 60.0);
+        let path = shape_path(
+            ShapeKind::UnevenRoundedRect {
+                top_left: 0.1,
+                top_right: 0.3,
+                bottom_right: 0.0,
+                bottom_left: 0.5,
+            },
+            &[],
+            rect,
+        );
+        assert!(!CGPath::is_empty(Some(&*path)));
+        let bounds = bounds_of(&path);
+        assert!(bounds.origin.x.abs() < 0.001);
+        assert!(bounds.origin.y.abs() < 0.001);
+        assert!((bounds.size.width - 120.0).abs() < 0.001);
+        assert!((bounds.size.height - 60.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn border_path_is_inset_by_half_the_width() {
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let path = border_path(rect, 4.0, 8.0, EdgeMask::ALL);
+        let bounds = bounds_of(&path);
+        assert!((bounds.origin.x - 2.0).abs() < 0.5);
+        assert!((bounds.origin.y - 2.0).abs() < 0.5);
+        assert!((bounds.size.width - 96.0).abs() < 1.0);
+        assert!((bounds.size.height - 96.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn border_path_with_one_edge_stays_on_that_edge() {
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let path = border_path(
+            rect,
+            4.0,
+            0.0,
+            EdgeMask {
+                top: true,
+                leading: false,
+                bottom: false,
+                trailing: false,
+            },
+        );
+        let bounds = bounds_of(&path);
+        assert!((bounds.origin.y - 2.0).abs() < 0.001);
+        assert!(bounds.size.height.abs() < 0.001);
+        assert!((bounds.size.width - 96.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn command_path_scales_unit_space_to_the_rect() {
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let path = commands_path(
+            &[
+                Command::MoveTo { x: 0.0, y: 0.0 },
+                Command::LineTo { x: 1.0, y: 1.0 },
+            ],
+            rect,
+        );
+        let bounds = bounds_of(&path);
+        assert!((bounds.size.width - 200.0).abs() < 0.001);
+        assert!((bounds.size.height - 100.0).abs() < 0.001);
+    }
+}

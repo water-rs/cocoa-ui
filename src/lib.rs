@@ -106,6 +106,15 @@ pub type PlatformView = objc2_ui_kit::UIView;
 pub use objc2_app_kit;
 /// The framework crate whose types appear in this crate's signatures, so a
 /// consumer never pins it separately.
+pub use objc2_core_foundation;
+/// The framework crate whose types appear in this crate's signatures, so a
+/// consumer never pins it separately.
+pub use objc2_core_graphics;
+/// The framework crate whose types appear in this crate's signatures, so a
+/// consumer never pins it separately.
+pub use objc2_quartz_core;
+/// The framework crate whose types appear in this crate's signatures, so a
+/// consumer never pins it separately.
 #[cfg(target_os = "ios")]
 pub use objc2_ui_kit;
 

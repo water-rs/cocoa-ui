@@ -145,7 +145,7 @@ pub fn set_center(view: &PlatformView, center: Point) {
 /// Writes `view`'s 2D transform — `UIView.transform`. On `AppKit` the layer
 /// owns the transform instead; see [`crate::core_animation`].
 #[cfg(target_os = "ios")]
-pub fn set_transform(view: &PlatformView, transform: objc2_core_graphics::CGAffineTransform) {
+pub fn set_transform(view: &PlatformView, transform: objc2_core_foundation::CGAffineTransform) {
     view.setTransform(transform);
 }
 
