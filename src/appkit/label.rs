@@ -12,9 +12,8 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 
 use objc2::rc::Retained;
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSLineBreakMode, NSScreen, NSTextAlignment, NSTextField, NSTextFieldCell};
-use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSAttributedString, NSObjectProtocol, NSString};
 
 use crate::callback::guarded;
@@ -97,13 +96,19 @@ impl Label {
     /// A wrapped text label, measuring and drawing `attributed` text.
     #[must_use]
     pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(LabelIvars {
-            source_text: RefCell::new(None),
-            line_limit: Cell::new(0),
-            reported_width: Cell::new(0.0),
-        });
-        // SAFETY: `initWithFrame:` is `NSTextField`'s designated initializer.
-        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] };
+        // `labelWithString:` is `NSTextField`'s label-style factory. The
+        // label cell keeps minimal text insets — `NSTextField(frame:)`
+        // keeps four points of leading/trailing padding — so ink sits
+        // where `measure` places it.
+        //
+        // The factory's own `alloc` zero-fills the ivar storage, which is
+        // exactly the state `LabelIvars` starts in: an empty `RefCell` slot
+        // and two zero `Cell`s, so no `set_ivars` step is needed.
+        let _ = mtm;
+        let empty = NSString::from_str("");
+        // SAFETY: invoked on the subclass itself, `labelWithString:`
+        // allocates through `self`, so the result is a `Label`.
+        let this: Retained<Self> = unsafe { msg_send![Self::class(), labelWithString: &*empty] };
         this.setEditable(false);
         this.setSelectable(false);
         this.setBordered(false);

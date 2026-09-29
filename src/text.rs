@@ -345,12 +345,9 @@ pub fn measure(
         None,
     );
     let ceil_to_scale = |v: f64| (v * scale).ceil() / scale;
-    // The leaf's width includes two points of horizontal breathing room on
-    // top of the bare text bounds, the inset a single-line NSTextField/UILabel
-    // keeps inside its frame before the first drawn pixel.
     TextMetrics {
         size: Size::new(
-            ceil_to_scale(bounds.size.width + 2.0),
+            ceil_to_scale(bounds.size.width),
             ceil_to_scale(bounds.size.height),
         ),
         first_baseline: Some(baseline_of(&layout_manager, 0)),
