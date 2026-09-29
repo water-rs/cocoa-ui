@@ -48,23 +48,37 @@ bitflags! {
     }
 }
 
+const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 5] = [
+    (WindowStyle::TITLED, NSWindowStyleMask::Titled),
+    (WindowStyle::CLOSABLE, NSWindowStyleMask::Closable),
+    (
+        WindowStyle::MINIATURIZABLE,
+        NSWindowStyleMask::Miniaturizable,
+    ),
+    (WindowStyle::RESIZABLE, NSWindowStyleMask::Resizable),
+    (
+        WindowStyle::FULL_SIZE_CONTENT_VIEW,
+        NSWindowStyleMask::FullSizeContentView,
+    ),
+];
+
 impl WindowStyle {
     fn native(self) -> NSWindowStyleMask {
-        [
-            (Self::TITLED, NSWindowStyleMask::Titled),
-            (Self::CLOSABLE, NSWindowStyleMask::Closable),
-            (Self::MINIATURIZABLE, NSWindowStyleMask::Miniaturizable),
-            (Self::RESIZABLE, NSWindowStyleMask::Resizable),
-            (
-                Self::FULL_SIZE_CONTENT_VIEW,
-                NSWindowStyleMask::FullSizeContentView,
-            ),
-        ]
-        .into_iter()
-        .filter(|(part, _)| self.contains(*part))
-        .fold(NSWindowStyleMask::Borderless, |mask, (_, native)| {
-            mask | native
-        })
+        STYLE_PARTS
+            .into_iter()
+            .filter(|(part, _)| self.contains(*part))
+            .fold(NSWindowStyleMask::Borderless, |mask, (_, native)| {
+                mask | native
+            })
+    }
+
+    /// The `WindowStyle` bits a native mask carries — flags the enum does not
+    /// model are dropped.
+    fn from_native(mask: NSWindowStyleMask) -> Self {
+        STYLE_PARTS
+            .into_iter()
+            .filter(|(_, native)| mask.contains(*native))
+            .fold(Self::empty(), |style, (part, _)| style | part)
     }
 }
 
@@ -101,11 +115,36 @@ impl Window {
         Self { window, delegate }
     }
 
+    /// Wraps a window the platform already created — a host handing its own
+    /// `NSWindow` to the window manager — and installs the kit delegate so the
+    /// `on_*` notification hooks fire. The window's current delegate is
+    /// replaced, matching the `window.delegate = delegate` the bound window
+    /// contracts rely on; `releasedWhenClosed` stays whatever the host set,
+    /// since the host owns the window's lifetime.
+    #[must_use]
+    pub fn adopt(mtm: MainThreadMarker, window: Retained<NSWindow>) -> Self {
+        let delegate = Delegate::new(mtm);
+        window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+        Self { window, delegate }
+    }
+
     /// The underlying `NSWindow`, for callers crossing into platform APIs the
     /// kit does not wrap.
     #[must_use]
     pub fn native(&self) -> &NSWindow {
         &self.window
+    }
+
+    /// The window's style mask as `WindowStyle` bits; flags the enum does not
+    /// model are dropped.
+    #[must_use]
+    pub fn style_mask(&self) -> WindowStyle {
+        WindowStyle::from_native(self.window.styleMask())
+    }
+
+    /// Replaces the window's style mask.
+    pub fn set_style_mask(&self, style: WindowStyle) {
+        self.window.setStyleMask(style.native());
     }
 
     /// The content rect of a window whose frame would be `frame` in `style` —
@@ -590,5 +629,24 @@ mod tests {
             NSWindowStyleMask::Titled | NSWindowStyleMask::Resizable
         );
         assert_eq!(WindowStyle::empty().native(), NSWindowStyleMask::Borderless);
+    }
+
+    #[test]
+    fn style_round_trips_through_the_native_mask() {
+        for style in [
+            WindowStyle::empty(),
+            WindowStyle::TITLED | WindowStyle::RESIZABLE,
+            WindowStyle::TITLED | WindowStyle::CLOSABLE | WindowStyle::FULL_SIZE_CONTENT_VIEW,
+            WindowStyle::all(),
+        ] {
+            assert_eq!(WindowStyle::from_native(style.native()), style);
+        }
+        // Flags the enum does not model are dropped on the way back.
+        assert_eq!(
+            WindowStyle::from_native(
+                NSWindowStyleMask::Titled | NSWindowStyleMask::TexturedBackground
+            ),
+            WindowStyle::TITLED
+        );
     }
 }
