@@ -233,7 +233,7 @@ impl Window {
     }
 
     /// Hands first responder back to the window itself, undoing the
-    /// automatic pick AppKit makes when the window becomes key with a
+    /// automatic pick `AppKit` makes when the window becomes key with a
     /// populated key-view loop.
     pub fn clear_first_responder(&self) {
         self.window.makeFirstResponder(None);

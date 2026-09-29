@@ -163,6 +163,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSClipView",
     "NSWindow",
     "NSUserInterfaceLayout",
+    "NSVisualEffectView",
     "NSLayoutConstraint",
     "NSStringDrawing",
     "objc2-quartz-core",
