@@ -645,3 +645,82 @@ impl InputView {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use objc2::{msg_send, sel};
+    use objc2_foundation::NSString;
+
+    use super::InputView;
+
+    /// Regression test for the selector-override defect: `#[unsafe(method(..))]`
+    /// names compile regardless of spelling, and a method declared under a
+    /// `snake_case` name was never installed under the `AppKit` selector —
+    /// `NSTextInputContext::initWithClient:` then threw on the missing
+    /// `NSTextInputClient` methods. Assert the `ObjC` selectors `AppKit` calls
+    /// actually resolve on the class.
+    #[test]
+    fn the_text_input_client_selectors_register_under_appkits_names() {
+        crate::test_harness::run(|mtm| {
+            // `new` itself performs `initWithClient:` — the call that threw
+            // when the selectors were missing.
+            let view = InputView::new(mtm);
+            for selector in [
+                sel!(insertText:replacementRange:),
+                sel!(setMarkedText:selectedRange:replacementRange:),
+                sel!(unmarkText),
+                sel!(selectedRange),
+                sel!(markedRange),
+                sel!(hasMarkedText),
+                sel!(attributedSubstringForProposedRange:actualRange:),
+                sel!(validAttributesForMarkedText),
+                sel!(firstRectForCharacterRange:actualRange:),
+                sel!(characterIndexForPoint:),
+                sel!(isFlipped),
+            ] {
+                // SAFETY: `respondsToSelector:` is a plain `NSObject`
+                // query on the live view.
+                let responds: objc2::runtime::Bool =
+                    unsafe { msg_send![&*view, respondsToSelector: selector] };
+                assert!(
+                    responds.as_bool(),
+                    "CocoaUiInputView must respond to {}",
+                    selector.name().to_string_lossy(),
+                );
+            }
+        });
+    }
+
+    /// `markedRange`/`selectedRange` answer UTF-16 `NSRange`s: an empty
+    /// document reports `NSNotFound`.
+    #[test]
+    fn a_fresh_input_view_reports_no_marked_text() {
+        crate::test_harness::run(|mtm| {
+            let view = InputView::new(mtm);
+            // SAFETY: `markedRange` is the view's own getter.
+            let marked: objc2_foundation::NSRange = unsafe { msg_send![&*view, markedRange] };
+            assert_eq!(
+                marked.location,
+                objc2_foundation::NSNotFound.cast_unsigned()
+            );
+            assert_eq!(marked.length, 0);
+            // SAFETY: `hasMarkedText` is the view's own getter.
+            let has_marked: objc2::runtime::Bool = unsafe { msg_send![&*view, hasMarkedText] };
+            assert!(!has_marked.as_bool());
+        });
+    }
+
+    /// `validAttributesForMarkedText` must answer an `NSArray` of attribute
+    /// names — `NSTextInputContext` reads it during composition setup.
+    #[test]
+    fn valid_attributes_for_marked_text_returns_attribute_names() {
+        crate::test_harness::run(|mtm| {
+            let view = InputView::new(mtm);
+            let attributes: objc2::rc::Retained<objc2_foundation::NSArray<NSString>> =
+                // SAFETY: `validAttributesForMarkedText` is the view's own
+                // getter.
+                unsafe { msg_send![&*view, validAttributesForMarkedText] };
+            assert!(attributes.count() >= 3);
+        });
+    }
+}

@@ -166,6 +166,45 @@ impl Drop for TransformRestore<'_> {
     }
 }
 
+/// Builds the `CARenderer` creation options: the destination's colour space
+/// and the Metal command queue the renderer shares.
+///
+/// `kCARendererColorSpace` must carry the live `CGColorSpace` object —
+/// `CARenderer` type-checks its option values, and a plist-serialized
+/// `CFData` makes the render crash at first use.
+fn car_renderer_options(
+    color_space: &objc2_core_foundation::CFRetained<objc2_core_graphics::CGColorSpace>,
+    queue: &ProtocolObject<dyn MTLCommandQueue>,
+) -> Retained<objc2_foundation::NSDictionary<objc2::runtime::AnyObject, objc2::runtime::AnyObject>>
+{
+    // SAFETY: `CARenderer`'s option keys are system statics.
+    let keys: [&NSString; 2] = unsafe {
+        [
+            objc2_quartz_core::kCARendererColorSpace,
+            objc2_quartz_core::kCARendererMetalCommandQueue,
+        ]
+    };
+    // SAFETY: `CGColorSpace` is toll-free bridged to NSObject and every
+    // Metal object descends NSObject; CARenderer expects exactly these
+    // key/value pairs.
+    let color_space_obj: &objc2_foundation::NSObject = unsafe {
+        objc2_core_foundation::CFRetained::as_ptr(color_space)
+            .cast::<objc2_foundation::NSObject>()
+            .as_ref()
+    };
+    // SAFETY: see above.
+    let queue_obj: &objc2_foundation::NSObject =
+        unsafe { &*std::ptr::from_ref(queue).cast::<objc2_foundation::NSObject>() };
+    let objects: [&objc2_foundation::NSObject; 2] = [color_space_obj, queue_obj];
+    let options = objc2_foundation::NSDictionary::from_slices(&keys, &objects);
+    // SAFETY: `NSDictionary`'s generic parameters are markers — the
+    // retained elements are the same objects either way.
+    unsafe {
+        Retained::from_raw(Retained::into_raw(options).cast())
+            .expect("a fresh dictionary is non-null")
+    }
+}
+
 /// Where a GPU surface's own texture lands inside a capture.
 #[derive(Clone, Copy, Debug)]
 pub struct SurfaceSpec {
@@ -763,40 +802,7 @@ impl NativeRenderer {
             renderer
         } else {
             let color_space = crate::metal::color_space(texture.pixelFormat());
-            // SAFETY: `CARenderer`'s option keys are system statics.
-            let keys: [&NSString; 2] = unsafe {
-                [
-                    objc2_quartz_core::kCARendererColorSpace,
-                    objc2_quartz_core::kCARendererMetalCommandQueue,
-                ]
-            };
-            // SAFETY: `CGColorSpace` is toll-free bridged to NSObject and
-            // every Metal object descends NSObject; CARenderer expects
-            // exactly these key/value pairs.
-            // SAFETY: every Metal object descends NSObject; CARenderer expects
-            // exactly these key/value pairs.
-            let color_space_obj: &objc2_foundation::NSObject = unsafe {
-                objc2_core_foundation::CFRetained::as_ptr(&color_space)
-                    .cast::<objc2_foundation::NSObject>()
-                    .as_ref()
-            };
-            // SAFETY: see above.
-            let queue_obj: &objc2_foundation::NSObject = unsafe {
-                &*objc2::rc::Retained::as_ptr(queue).cast::<objc2_foundation::NSObject>()
-            };
-            let objects: [&objc2_foundation::NSObject; 2] = [color_space_obj, queue_obj];
-            let options = objc2_foundation::NSDictionary::from_slices(&keys, &objects);
-            // SAFETY: `NSDictionary`'s generic parameters are markers — the
-            // retained elements are the same objects either way.
-            let options: Retained<
-                objc2_foundation::NSDictionary<
-                    objc2::runtime::AnyObject,
-                    objc2::runtime::AnyObject,
-                >,
-            > = unsafe {
-                Retained::from_raw(Retained::into_raw(options).cast())
-                    .expect("a fresh dictionary is non-null")
-            };
+            let options = car_renderer_options(&color_space, queue);
             // SAFETY: `rendererWithMTLTexture:options:` retains its inputs
             // for the call; the renderer is owned through `self.renderer`.
             let renderer =
@@ -1279,5 +1285,65 @@ struct HiddenRestore<'a> {
 impl Drop for HiddenRestore<'_> {
     fn drop(&mut self) {
         self.owner.set_content_hidden(self.was);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::ffi::c_void;
+
+    use objc2::rc::Retained;
+    use objc2_core_foundation::{CFRetained, ConcreteType};
+    use objc2_core_graphics::CGColorSpace;
+    use objc2_foundation::NSString;
+    use objc2_metal::{MTLCreateSystemDefaultDevice, MTLDevice, MTLPixelFormat};
+
+    use super::car_renderer_options;
+
+    // `CFGetTypeID` distinguishes a live Core Foundation object from any
+    // serialization of one. Declared here because `objc2-core-foundation`
+    // keeps the symbol private.
+    unsafe extern "C" {
+        fn CFGetTypeID(object: *const c_void) -> usize;
+    }
+
+    /// Regression test for the colour-space defect: `kCARendererColorSpace`
+    /// must carry the live `CGColorSpace`, not a `CFData` serialization of
+    /// it — `CARenderer` type-checks its options and crashed on the data
+    /// form.
+    #[test]
+    fn the_car_renderer_options_carry_a_live_color_space() {
+        let Some(device) = MTLCreateSystemDefaultDevice() else {
+            return; // No Metal on this runner — nothing to check.
+        };
+        let queue = device
+            .newCommandQueue()
+            .expect("failed to create a Metal command queue");
+        let color_space: CFRetained<CGColorSpace> =
+            crate::metal::color_space(MTLPixelFormat::BGRA8Unorm);
+        let options = car_renderer_options(&color_space, &queue);
+
+        // SAFETY: the option key is a system static.
+        let key: &NSString = unsafe { objc2_quartz_core::kCARendererColorSpace };
+        // SAFETY: the static's storage is `NSString`, a subclass of
+        // `NSObject`, so the pointer re-interpretation stays in bounds.
+        let key: &objc2::runtime::AnyObject =
+            unsafe { &*std::ptr::from_ref::<NSString>(key).cast() };
+        let value = options
+            .objectForKey(key)
+            .expect("the options must set kCARendererColorSpace");
+        // SAFETY: `value` is a live `NSObject` — a valid `CFTypeRef`.
+        let type_id = unsafe {
+            CFGetTypeID(
+                Retained::as_ptr(&value)
+                    .cast::<objc2::runtime::AnyObject>()
+                    .cast(),
+            )
+        };
+        assert_eq!(
+            type_id,
+            CGColorSpace::type_id(),
+            "kCARendererColorSpace must carry a CGColorSpace, not a serialization",
+        );
     }
 }

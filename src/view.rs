@@ -692,3 +692,42 @@ pub fn set_accessibility_content(view: &PlatformView, label: Option<&str>, value
         view.setIsAccessibilityElement(true, mtm);
     }
 }
+
+#[cfg(all(test, target_os = "ios"))]
+mod tests {
+    use objc2::rc::Retained;
+    use objc2::runtime::Bool;
+    use objc2::{MainThreadOnly, msg_send, sel};
+    use objc2_ui_kit::UIView;
+
+    use super::display_immediately;
+
+    /// Regression test for the `displayIfNeeded` defect: `UIView` has no
+    /// `displayIfNeeded` — only `CALayer` does — and sending it to the view
+    /// aborts on an unrecognized selector. `display_immediately` must send
+    /// `setNeedsDisplay` to the view and `displayIfNeeded` to its layer.
+    #[test]
+    fn display_immediately_targets_the_layer_not_the_view() {
+        crate::test_harness::run(|mtm| {
+            // SAFETY: `initWithFrame:` is `UIView`'s plain initializer;
+            // `mtm` proves main-thread confinement.
+            let view: Retained<UIView> = unsafe {
+                msg_send![UIView::alloc(mtm), initWithFrame: objc2_core_foundation::CGRect::ZERO]
+            };
+            // The premise the pre-fix code missed: the selector does not
+            // exist on `UIView` itself.
+            // SAFETY: `respondsToSelector:` is a plain `NSObject` query.
+            let view_responds: Bool =
+                unsafe { msg_send![&*view, respondsToSelector: sel!(displayIfNeeded)] };
+            assert!(!view_responds.as_bool());
+            let layer = view.layer();
+            // SAFETY: `respondsToSelector:` is a plain `NSObject` query.
+            let layer_responds: Bool =
+                unsafe { msg_send![&*layer, respondsToSelector: sel!(displayIfNeeded)] };
+            assert!(layer_responds.as_bool());
+            // Would abort on the unrecognized selector had it been sent to
+            // the view.
+            display_immediately(&view);
+        });
+    }
+}

@@ -733,3 +733,59 @@ pub fn window_root(mtm: MainThreadMarker) -> Retained<HostView> {
         },
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use crate::geometry::Rect;
+    use crate::uikit::Label;
+
+    use super::HostView;
+
+    /// Same defect as the `AppKit` `layout` loop: a label whose width
+    /// changes inside `layoutSubviews` must mark ancestors dirty, not
+    /// synchronously re-enter the parent's pass.
+    #[test]
+    fn a_child_invalidation_inside_layout_does_not_reenter_the_pass() {
+        crate::test_harness::run(|mtm| {
+            let host = HostView::new(mtm, Rect::new(0.0, 0.0, 400.0, 300.0));
+            let label = Label::new(mtm);
+            host.add_subview(&label);
+            let _window = crate::test_harness::attach(mtm, &host);
+
+            let calls = Rc::new(Cell::new(0));
+            host.set_layout_handler({
+                let calls = Rc::clone(&calls);
+                move |_view| {
+                    calls.set(calls.get() + 1);
+                    if calls.get() == 1 {
+                        let frame = label.frame();
+                        crate::view::set_frame(
+                            &label,
+                            Rect::new(
+                                frame.origin.x,
+                                frame.origin.y,
+                                frame.size.width + 20.0,
+                                frame.size.height,
+                            ),
+                        );
+                    }
+                }
+            });
+
+            host.set_needs_layout();
+            host.layout_if_needed();
+            crate::test_harness::pump();
+            host.layout_if_needed();
+
+            assert!(
+                calls.get() <= 4,
+                "layout re-entered {} times — invalidation must mark, not recurse",
+                calls.get(),
+            );
+            assert!(calls.get() >= 1);
+        });
+    }
+}
