@@ -42,10 +42,11 @@ use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::{
     NSBezelStyle, NSButton, NSColor, NSControlTextEditingDelegate, NSDragOperation, NSDraggingInfo,
-    NSFont, NSLayoutConstraint, NSPasteboardItem, NSPasteboardType, NSPasteboardWriting, NSRectFill,
-    NSScrollView, NSTableColumn, NSTableRowView, NSTableView, NSTableViewAnimationOptions,
-    NSTableViewDataSource, NSTableViewDelegate, NSTableViewDropOperation,
-    NSTableViewSelectionHighlightStyle, NSTableViewStyle, NSTextField, NSView,
+    NSFont, NSLayoutConstraint, NSPasteboardItem, NSPasteboardType, NSPasteboardWriting,
+    NSRectFill, NSScrollView, NSTableColumn, NSTableRowView, NSTableView,
+    NSTableViewAnimationOptions, NSTableViewDataSource, NSTableViewDelegate,
+    NSTableViewDropOperation, NSTableViewSelectionHighlightStyle, NSTableViewStyle, NSTextField,
+    NSView,
 };
 use objc2_foundation::{
     NSArray, NSEdgeInsets, NSIndexSet, NSInteger, NSMutableIndexSet, NSNotFound, NSNotification,
@@ -798,10 +799,7 @@ impl TableView {
 
     /// Tells the table to re-ask heights for `rows`.
     pub fn note_height_changed(&self, rows: std::ops::Range<usize>) {
-        let set = NSIndexSet::indexSetWithIndexesInRange(NSRange::new(
-            rows.start,
-            rows.len(),
-        ));
+        let set = NSIndexSet::indexSetWithIndexesInRange(NSRange::new(rows.start, rows.len()));
         self.table_view().noteHeightOfRowsWithIndexesChanged(&set);
     }
 
