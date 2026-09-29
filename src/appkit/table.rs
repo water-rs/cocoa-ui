@@ -758,7 +758,7 @@ impl TableView {
         let indexes = self.table_view().selectedRowIndexes();
         let mut rows = Vec::with_capacity(indexes.count());
         let mut index = indexes.firstIndex();
-        while index != NSNotFound as usize {
+        while index != NSNotFound.cast_unsigned() {
             rows.push(index);
             index = indexes.indexGreaterThanIndex(index);
         }
