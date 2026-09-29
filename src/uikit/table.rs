@@ -477,6 +477,25 @@ impl TableView {
             })
     }
 
+    /// Reloads `indexes` — `UIKit` re-asks each row's data in place.
+    pub fn reload_rows(&self, indexes: &[IndexPath], animated: bool) {
+        let animation = if animated {
+            UITableViewRowAnimation::Automatic
+        } else {
+            UITableViewRowAnimation::None
+        };
+        let paths = NSArray::from_retained_slice(
+            &indexes.iter().map(|i| index_path(*i)).collect::<Vec<_>>(),
+        );
+        self.reloadRowsAtIndexPaths_withRowAnimation(&paths, animation);
+    }
+
+    /// The index path `cell` is placed at, if it is on screen.
+    #[must_use]
+    pub fn index_path_for_cell(&self, cell: &TableCell) -> Option<IndexPath> {
+        self.indexPathForCell(cell).map(|p| table_index(&p))
+    }
+
     /// Selects `index` without scrolling to it.
     pub fn select_row(&self, index: IndexPath, animated: bool) {
         self.selectRowAtIndexPath_animated_scrollPosition(
