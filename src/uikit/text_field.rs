@@ -1,8 +1,7 @@
 //! The `UIKit` text field: a `UITextField` driving single-line text input.
 //!
-//! The control carries no chrome: `SwiftUI`'s automatic field style is plain
-//! on iOS — no border, no fill — so `new` leaves `UITextField`'s border
-//! style at `None`. User edits surface through `install_change_handler`
+//! The control carries no chrome: `new` leaves `UITextField`'s border
+//! style at its default `None` — no border, no fill. User edits surface through `install_change_handler`
 //! (`editingChanged`) and Return through `install_submit_handler`
 //! (`editingDidEndOnExit`).
 //!

@@ -19,13 +19,6 @@ use crate::ActionTarget;
 use crate::action::ControlEvents;
 use crate::slider::{ControlSize, ValueAnimation};
 
-/// The height `SwiftUI`'s `Slider` reports on iOS.
-///
-/// `UISlider` draws the same track and thumb centered in a 34pt frame, so
-/// the extra 3pt is pure padding — the reported intrinsic height is pinned
-/// to the `SwiftUI` answer rather than the control's.
-const TRACK_HEIGHT: f64 = 31.0;
-
 /// A continuous `UISlider` used as a value leaf.
 pub struct SliderIvars {}
 
@@ -118,11 +111,11 @@ impl Slider {
         })
     }
 
-    /// The track's intrinsic height — the `SwiftUI`-matching constant a
-    /// measure pass reports.
+    /// The track's intrinsic height — the height `UISlider` itself
+    /// reports through `intrinsicContentSize`.
     #[must_use]
-    pub const fn intrinsic_height(&self) -> f64 {
-        TRACK_HEIGHT
+    pub fn intrinsic_height(&self) -> f64 {
+        self.intrinsicContentSize().height
     }
 
     /// Names the control to a screen reader; `None` leaves it unnamed.

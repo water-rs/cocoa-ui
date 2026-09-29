@@ -35,8 +35,8 @@ use crate::action::ControlEvents;
 use crate::geometry::Size;
 use crate::picker::PickerStyle;
 
-/// The menu button's trailing chevron and its padding — `SwiftUI`'s menu
-/// picker chrome.
+/// The menu button's trailing chevron and its padding — the symbol the
+/// platform's own menu controls draw.
 const CHEVRON: &str = "chevron.up.chevron.down";
 const CHEVRON_PADDING: f64 = 4.0;
 

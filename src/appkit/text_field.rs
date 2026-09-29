@@ -1,8 +1,7 @@
 //! The `AppKit` text field: an `NSTextField` driving single-line text input.
 //!
 //! The control draws the native rounded bezel — platform fill, hairline
-//! border, and focus ring — which is what `SwiftUI`'s default `TextField`
-//! renders on macOS. The field is its own `NSTextFieldDelegate`: user edits
+//! border, and focus ring. The field is its own `NSTextFieldDelegate`: user edits
 //! surface through `on_change` (`controlTextDidChange`) and Return through
 //! `on_submit` (`doCommandBySelector:`), and the handlers live on the
 //! class's ivars rather than on a target-action pair because editing
@@ -117,8 +116,8 @@ define_class!(
 );
 
 impl TextField {
-    /// An editable, selectable, enabled field drawing the rounded bezel —
-    /// `SwiftUI`'s default `TextField` chrome on macOS — with `line_limit`
+    /// An editable, selectable, enabled field drawing the platform's
+    /// rounded bezel, with `line_limit`
     /// applied (`Some(1)` is the single-line mode, `None` unlimited).
     #[must_use]
     pub fn new(mtm: MainThreadMarker, line_limit: Option<usize>) -> Retained<Self> {

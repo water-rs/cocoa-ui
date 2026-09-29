@@ -56,6 +56,7 @@ pub mod action;
 #[cfg(target_os = "macos")]
 pub mod appkit;
 pub mod avkit;
+pub mod badge;
 pub mod bitmap;
 pub mod bundle;
 mod callback;

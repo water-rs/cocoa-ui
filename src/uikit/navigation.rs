@@ -646,8 +646,7 @@ pub fn first_control(view: &objc2_ui_kit::UIView) -> Option<Retained<UIControl>>
     None
 }
 
-/// The first `UIButton` in `view`'s subtree, depth-first — the button chrome
-/// forwards its action to (`firstButton` in the Swift host).
+/// The first `UIButton` in `view`'s subtree, depth-first.
 #[must_use]
 pub fn first_button(view: &objc2_ui_kit::UIView) -> Option<Retained<UIButton>> {
     if let Some(button) = view.downcast_ref::<UIButton>() {

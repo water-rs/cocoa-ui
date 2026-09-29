@@ -401,7 +401,7 @@ impl Compositor {
         ));
         Self {
             queue: DispatchQueue::new_with_target(
-                "dev.waterui.graphics.capture-composition",
+                "dev.cocoaui.graphics.capture-composition",
                 None,
                 Some(&target),
             ),
