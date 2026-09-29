@@ -95,6 +95,8 @@ pub mod scroll;
 pub mod shape;
 pub mod slider;
 pub mod system_font;
+#[cfg(test)]
+mod test_harness;
 pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
