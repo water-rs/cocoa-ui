@@ -162,7 +162,7 @@ define_class!(
         }
 
         // SAFETY: plain state read.
-        #[unsafe(method(unmark_text))]
+        #[unsafe(method(unmarkText))]
         fn unmark_text(&self) {
             guarded("InputView unmark_text", || {
                 if !self.has_marked_text() {
@@ -213,7 +213,7 @@ define_class!(
         }
 
         // SAFETY: returns an array of attributed-string key constants.
-        #[unsafe(method_id(valid_attributes_for_marked_text))]
+        #[unsafe(method_id(validAttributesForMarkedText))]
         fn valid_attributes_for_marked_text(&self) -> Retained<NSArray<NSAttributedStringKey>> {
             // SAFETY: the attribute-name statics are system constants.
             let keys = unsafe {
@@ -259,7 +259,7 @@ define_class!(
 
         // SAFETY: plain query; the surface owns its document, so no index
         // exists.
-        #[unsafe(method(character_index_for_point:))]
+        #[unsafe(method(characterIndexForPoint:))]
         fn character_index_for_point(&self, point: NSPoint) -> NSUInteger {
             let _ = point;
             NSNotFound.cast_unsigned()
