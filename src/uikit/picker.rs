@@ -153,6 +153,16 @@ define_class!(
     }
 );
 
+impl WheelDelegate {
+    /// A delegate reading `shared` — the same cell its `Picker` writes, so
+    /// `number_of_rows` sees the titles `set_items` installed.
+    fn with_shared(mtm: MainThreadMarker, shared: Rc<RefCell<Shared>>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(WheelIvars { shared });
+        // SAFETY: `init` is `NSObject`'s designated initializer.
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
 /// A selection menu over one of `UIKit`'s selection controls.
 ///
 /// The wrapped control is chosen by [`PickerStyle`] at construction and
@@ -234,6 +244,11 @@ impl Picker {
     /// the zero rect the views start at.
     #[must_use]
     pub fn new(mtm: MainThreadMarker, style: PickerStyle) -> Self {
+        let shared = Rc::new(RefCell::new(Shared {
+            handler: None,
+            titles: Vec::new(),
+            font: None,
+        }));
         let (control, delegate) = match style {
             PickerStyle::Menu => {
                 let button = UIButton::new(mtm);
@@ -255,10 +270,7 @@ impl Picker {
             }
             PickerStyle::Radio => {
                 let wheel = UIPickerView::new(mtm);
-                // SAFETY: `init` is `NSObject`'s designated initializer,
-                // which `WheelDelegate` forwards to its superclass.
-                let delegate: Retained<WheelDelegate> =
-                    unsafe { msg_send![WheelDelegate::alloc(mtm), init] };
+                let delegate = WheelDelegate::with_shared(mtm, Rc::clone(&shared));
                 wheel.setDataSource(Some(ProtocolObject::from_ref(&*delegate)));
                 wheel.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
                 (Control::Wheel(wheel), Some(delegate))
@@ -270,11 +282,7 @@ impl Picker {
             targets: RefCell::new(Vec::new()),
             actions: RefCell::new(Vec::new()),
             _delegate: delegate,
-            shared: Rc::new(RefCell::new(Shared {
-                handler: None,
-                titles: Vec::new(),
-                font: None,
-            })),
+            shared,
         }
     }
 
