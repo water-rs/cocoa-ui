@@ -34,6 +34,7 @@
 mod animate;
 mod appearance;
 mod application;
+mod badge;
 pub mod button;
 mod color_view;
 mod color_well;
@@ -56,6 +57,7 @@ mod window;
 pub use animate::{run_animation, set_animated_alpha};
 pub use appearance::ColorSchemeObservation;
 pub use application::{ActivationPolicy, Application, ApplicationHandlers};
+pub use badge::BadgeView;
 pub use button::Button;
 pub use color_view::ColorView;
 pub use color_well::ColorWell;

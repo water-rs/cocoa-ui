@@ -32,6 +32,7 @@
 
 mod appearance;
 mod application;
+mod badge;
 pub mod button;
 mod calendar_view;
 mod color_view;
@@ -51,6 +52,7 @@ mod window;
 
 pub use appearance::{ColorSchemeObservation, current_scheme};
 pub use application::{ApplicationHandlers, WindowScene, run};
+pub use badge::BadgeView;
 pub use button::Button;
 pub use calendar_view::CalendarView;
 pub use color_view::ColorView;
