@@ -25,7 +25,6 @@ use objc2_ui_kit::{
 
 use crate::callback::guarded;
 use crate::geometry::{EdgeInsets, Edges, MeasureProposal, Point, Rect, Size};
-use crate::geometry::{EdgeInsets, MeasureProposal, Point, Rect, Size};
 use crate::keys::{self, KeyEvent};
 use crate::pointer::{PointerEvent, PointerEvents};
 
@@ -117,7 +116,6 @@ impl fmt::Debug for HostViewIvars {
             .field("last_auto_layout_width", &self.last_auto_layout_width.get())
             .field("manages_safe_area", &self.manages_safe_area.get())
             .field("intrinsic_auto_layout", &self.intrinsic_auto_layout.get())
-            .finish_non_exhaustive()
             .field("pointer", &self.pointer.borrow().is_some())
             .field("pointer_events", &self.pointer_events.get())
             .field("pointer_inside", &self.pointer_inside.get())
@@ -126,7 +124,7 @@ impl fmt::Debug for HostViewIvars {
                 &self.hover_recognizer.borrow().is_some(),
             )
             .field("key", &self.key.borrow().is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

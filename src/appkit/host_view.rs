@@ -16,8 +16,10 @@ use objc2::AnyThread;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSScreen, NSView};
-use objc2_app_kit::{NSEvent, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView};
+use objc2_app_kit::{
+    NSDragOperation, NSDraggingInfo, NSEvent, NSScreen, NSTrackingArea, NSTrackingAreaOptions,
+    NSView,
+};
 use objc2_foundation::{NSArray, NSEdgeInsets, NSObjectProtocol, NSPoint, NSRect, NSSize};
 
 use super::drag_drop::{DragInfo, DropHandlers};

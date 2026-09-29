@@ -426,7 +426,7 @@ impl AccessoryOverlay {
                 );
             }
         });
-        crate::view::add_subview(&platter, &accessory);
+        crate::view::add_subview(&platter, accessory);
         if let Some(root) = controller.view() {
             root.addSubview(&platter);
         }

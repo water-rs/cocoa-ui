@@ -37,7 +37,7 @@ pub enum MaterialLevel {
 }
 
 #[cfg(target_os = "ios")]
-fn blur_style(level: MaterialLevel) -> UIBlurEffectStyle {
+const fn blur_style(level: MaterialLevel) -> UIBlurEffectStyle {
     match level {
         MaterialLevel::UltraThin => UIBlurEffectStyle::SystemUltraThinMaterial,
         MaterialLevel::Thin => UIBlurEffectStyle::SystemThinMaterial,

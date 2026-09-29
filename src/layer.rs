@@ -40,7 +40,7 @@ pub fn ensure_layer(view: &PlatformView) {
 /// Opts `view` into layer backing — `NSView.wantsLayer = true`; a `UIView`
 /// is always layer-backed.
 #[cfg(target_os = "ios")]
-pub fn ensure_layer(_view: &PlatformView) {}
+pub const fn ensure_layer(_view: &PlatformView) {}
 
 /// The layer's frame in its superlayer's coordinate space.
 pub fn set_frame(layer: &CALayer, frame: Rect) {
