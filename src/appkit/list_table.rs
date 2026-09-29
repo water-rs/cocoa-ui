@@ -592,6 +592,9 @@ impl fmt::Debug for DeleteButton {
     }
 }
 
+/// The handler [`RowContainer`] runs after every `AppKit` layout pass.
+type RowLayoutHandler = Rc<dyn Fn(&RowContainer)>;
+
 /// The per-instance state [`RowContainer`] stores.
 #[derive(Default)]
 pub struct RowContainerIvars {
@@ -603,6 +606,8 @@ pub struct RowContainerIvars {
     delete_button: RefCell<Option<Retained<NSButton>>>,
     /// The button's action target; lives as long as the button does.
     delete_target: RefCell<Option<crate::ActionTarget>>,
+    /// Called after every `AppKit` layout pass on the row.
+    layout: RefCell<Option<RowLayoutHandler>>,
     /// Whatever the consumer keeps alive with the row (mounted leaf,
     /// watcher guards).
     payload: RefCell<Option<Box<dyn Any>>>,
@@ -630,6 +635,32 @@ define_class!(
     pub struct RowContainer;
 
     unsafe impl NSObjectProtocol for RowContainer {}
+
+    impl RowContainer {
+        /// A resize marks the row for a fresh layout pass, where the
+        /// layout handler sees the constraint-resolved content slot.
+        #[unsafe(method(setFrameSize:))]
+        fn set_frame_size(&self, new_size: NSSize) {
+            guarded("RowContainer setFrameSize", || {
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), setFrameSize: new_size] };
+                self.setNeedsLayout(true);
+            });
+        }
+
+        /// Keeps `AppKit`'s layout, then reports it so the consumer can
+        /// track the content slot's width.
+        #[unsafe(method(layout))]
+        fn layout_override(&self) {
+            guarded("RowContainer layout", || {
+                // SAFETY: see the module safety note.
+                let _: () = unsafe { msg_send![super(self), layout] };
+                if let Some(handler) = self.ivars().layout.borrow().as_ref().cloned() {
+                    handler(self);
+                }
+            });
+        }
+    }
 );
 
 impl RowContainer {
@@ -722,6 +753,12 @@ impl RowContainer {
 
         NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&constraints));
         ivars.constraints.replace(constraints);
+    }
+
+    /// Runs `handler` after every `AppKit` layout pass, replacing the
+    /// previous handler.
+    pub fn set_layout_handler(&self, handler: impl Fn(&Self) + 'static) {
+        self.ivars().layout.replace(Some(Rc::new(handler)));
     }
 
     /// Stores `value` in the row; the previous payload is dropped.

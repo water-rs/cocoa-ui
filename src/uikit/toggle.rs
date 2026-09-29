@@ -200,6 +200,17 @@ impl Toggle {
         self.control().intrinsicContentSize().into()
     }
 
+    /// The row's composed size beside a label of `label_size`: label,
+    /// `LABEL_SPACING`, control wide; the taller of the two high — the same
+    /// arithmetic the `set_label` constraints place.
+    #[must_use]
+    pub fn row_size(&self, label_size: Size) -> Size {
+        Size::new(
+            label_size.width + LABEL_SPACING + self.control_size().width,
+            label_size.height.max(self.control_size().height),
+        )
+    }
+
     /// Writes `on` into the control under `change`'s terms. A state already
     /// equal to `on` is left alone.
     ///

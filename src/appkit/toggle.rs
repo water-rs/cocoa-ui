@@ -165,9 +165,10 @@ impl Toggle {
             &*control
                 .centerYAnchor()
                 .constraintEqualToAnchor(&self.container.centerYAnchor()),
-            &*label
-                .leadingAnchor()
-                .constraintEqualToAnchor_constant(&control.trailingAnchor(), LABEL_SPACING),
+            &*label.leadingAnchor().constraintEqualToAnchor_constant(
+                &self.container.leadingAnchor(),
+                self.label_leading(),
+            ),
             &*label
                 .centerYAnchor()
                 .constraintEqualToAnchor(&self.container.centerYAnchor()),
@@ -182,6 +183,26 @@ impl Toggle {
     #[must_use]
     pub fn control_size(&self) -> Size {
         self.control().intrinsicContentSize().into()
+    }
+
+    /// The label's leading offset inside the row: the control's intrinsic
+    /// width plus `LABEL_SPACING`. `set_label` pins the label there, and a
+    /// measure of the row reads the same number — the row's composition
+    /// lives in one place.
+    #[must_use]
+    pub fn label_leading(&self) -> f64 {
+        self.control_size().width + LABEL_SPACING
+    }
+
+    /// The row's composed size beside a label of `label_size`: control,
+    /// `LABEL_SPACING`, label wide; the taller of the two high — the same
+    /// arithmetic the `set_label` constraints place.
+    #[must_use]
+    pub fn row_size(&self, label_size: Size) -> Size {
+        Size::new(
+            self.label_leading() + label_size.width,
+            self.control_size().height.max(label_size.height),
+        )
     }
 
     /// Writes `on` into the control, under `change`'s animation terms.
