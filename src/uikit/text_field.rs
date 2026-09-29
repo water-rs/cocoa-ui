@@ -20,7 +20,8 @@ use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::{CGFloat, CGRect, CGSize};
 use objc2_foundation::{NSAttributedString, NSObjectProtocol};
 use objc2_ui_kit::{
-    NSTextAlignment, UIKeyboardType, UITextBorderStyle, UITextField, UITextInputTraits,
+    NSTextAlignment, UIKeyboardType, UITextAutocapitalizationType, UITextAutocorrectionType,
+    UITextBorderStyle, UITextContentTypePassword, UITextField, UITextInputTraits,
 };
 
 use crate::ActionTarget;
@@ -171,4 +172,108 @@ impl TextField {
 #[must_use]
 pub fn intrinsic_size(field: &TextField) -> Size {
     field.intrinsicContentSize().into()
+}
+
+define_class!(
+    // SAFETY: `UITextField`'s designated initializer is `initWithFrame:`,
+    // which `SecureField::new` calls, and the class does not implement `Drop`.
+    #[unsafe(super(UITextField))]
+    #[name = "CocoaUiSecureField"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = TextFieldIvars]
+    #[derive(Debug)]
+    /// A `UITextField` masking its input — the secure twin of [`TextField`],
+    /// with the same installable change and submit actions.
+    pub struct SecureField;
+
+    // SAFETY: `NSObjectProtocol` asks nothing of a `UITextField` subclass.
+    unsafe impl NSObjectProtocol for SecureField {}
+);
+
+impl SecureField {
+    /// An empty, enabled secure field: masked entry, the password content
+    /// type, no autocorrection or autocapitalization — the configuration a
+    /// password field needs, drawn with `UIKit`'s rounded-rect border.
+    #[must_use]
+    pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(TextFieldIvars {});
+        // SAFETY: `initWithFrame:` is the inherited designated initializer.
+        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] };
+        this.setBorderStyle(UITextBorderStyle::RoundedRect);
+        this.setSecureTextEntry(true);
+        // SAFETY: `UITextContentTypePassword` is a framework static —
+        // immutable, so reading it cannot alias.
+        this.setTextContentType(Some(unsafe { UITextContentTypePassword }));
+        this.setAutocorrectionType(UITextAutocorrectionType::No);
+        this.setAutocapitalizationType(UITextAutocapitalizationType::None);
+        this
+    }
+
+    /// The committed plain text the field currently shows.
+    #[must_use]
+    pub fn string(&self) -> String {
+        self.text()
+            .map_or_else(String::new, |text| text.to_string())
+    }
+
+    /// Writes `text` into the field. Programmatic writes do not fire the
+    /// change action, so an external update cannot echo back as an edit.
+    pub fn set_string(&self, text: &str) {
+        self.setText(Some(&objc2_foundation::NSString::from_str(text)));
+    }
+
+    /// The placeholder shown while the field is empty.
+    pub fn set_placeholder(&self, placeholder: &NSAttributedString) {
+        self.setAttributedPlaceholder(Some(placeholder));
+    }
+
+    /// How the field aligns its text.
+    pub fn set_text_alignment(&self, alignment: NSTextAlignment) {
+        self.setTextAlignment(alignment);
+    }
+
+    /// The font the field draws with.
+    pub fn set_font(&self, font: &objc2_ui_kit::UIFont) {
+        self.setFont(Some(font));
+    }
+
+    /// Whether the field responds to input.
+    pub fn set_enabled(&self, enabled: bool) {
+        self.setEnabled(enabled);
+    }
+
+    /// The height the input wants at `width` — see [`TextField::measured_height`].
+    #[must_use]
+    pub fn measured_height(&self, width: f64) -> f64 {
+        let fitting = self.sizeThatFits(CGSize {
+            width: width as CGFloat,
+            height: CGFloat::MAX,
+        });
+        let intrinsic = self.intrinsicContentSize();
+        fitting.height.max(intrinsic.height)
+    }
+
+    /// Calls `handler` with the field each time the user edits it. The
+    /// returned target must be kept for as long as the control should
+    /// respond; dropping it detaches the target.
+    pub fn install_change_handler(&self, handler: impl Fn(&Self) + 'static) -> ActionTarget {
+        let this = Weak::new(self);
+        ActionTarget::new(self, ControlEvents::EDITING_CHANGED, move |_mtm| {
+            if let Some(field) = this.load() {
+                handler(&field);
+            }
+        })
+    }
+
+    /// Calls `handler` when the user submits with Return — the
+    /// `editingDidEndOnExit` event. The returned target must be kept for as
+    /// long as the control should respond.
+    pub fn install_submit_handler(&self, handler: impl Fn(&Self) + 'static) -> ActionTarget {
+        let this = Weak::new(self);
+        ActionTarget::new(self, ControlEvents::EDITING_DID_END_ON_EXIT, move |_mtm| {
+            if let Some(field) = this.load() {
+                handler(&field);
+            }
+        })
+    }
 }

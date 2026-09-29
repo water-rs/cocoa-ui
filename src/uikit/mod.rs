@@ -53,6 +53,6 @@ pub mod text_field;
 pub use slider::Slider;
 mod stepper;
 pub use stepper::Stepper;
-pub use text_field::TextField;
+pub use text_field::{SecureField, TextField};
 pub use view_controller::ViewController;
 pub use window::Window;
