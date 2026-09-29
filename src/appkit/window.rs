@@ -644,7 +644,7 @@ mod tests {
         // Flags the enum does not model are dropped on the way back.
         assert_eq!(
             WindowStyle::from_native(
-                NSWindowStyleMask::Titled | NSWindowStyleMask::TexturedBackground
+                NSWindowStyleMask::Titled | NSWindowStyleMask::UnifiedTitleAndToolbar
             ),
             WindowStyle::TITLED
         );

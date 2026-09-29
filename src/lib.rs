@@ -96,6 +96,7 @@ pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
 pub mod view;
+pub mod web_kit;
 
 /// The platform's base view class: `NSView` on macOS, `UIView` on iOS.
 ///
@@ -127,6 +128,8 @@ pub use objc2_core_foundation;
 pub use objc2_core_graphics;
 pub use objc2_metal;
 pub use objc2_quartz_core;
+pub use objc2_security;
 #[cfg(target_os = "ios")]
 pub use objc2_ui_kit;
+pub use objc2_web_kit;
 pub use system_font::{FontMetrics, TextStyle};
