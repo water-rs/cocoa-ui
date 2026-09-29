@@ -144,6 +144,13 @@ impl Label {
         self.invalidate_layout();
     }
 
+    /// The width the cell needs to draw the text unclipped — its fitting
+    /// size, wider than the bare text bounds by the label's insets.
+    #[must_use]
+    pub fn fitting_width(&self) -> f64 {
+        self.intrinsicContentSize().width
+    }
+
     /// Measures the label's current text under `wrap` at the scale of the
     /// screen the label draws on.
     #[must_use]
