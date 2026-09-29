@@ -41,6 +41,11 @@ pub use color_well::ColorWell;
 pub mod colors;
 mod host_view;
 pub mod image;
+mod menu;
+mod navigation;
+mod search_bar;
+mod split;
+mod tabs;
 mod view_controller;
 mod window;
 
@@ -74,6 +79,7 @@ pub use navigation::{
 pub use search_bar::SearchBar;
 pub use split::{ColumnWidth, SplitColumnController, SplitController};
 pub use stepper::Stepper;
+pub use tabs::{TabContentController, TabSpec, TabsController};
 pub use text_field::{SecureField, TextField};
 pub use view_controller::ViewController;
 pub use window::Window;

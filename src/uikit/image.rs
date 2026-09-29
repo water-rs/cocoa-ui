@@ -109,6 +109,12 @@ impl ImageView {
         })
     }
 
+    /// The name of the system symbol shown, if one is set.
+    #[must_use]
+    pub fn symbol_name(&self) -> Option<String> {
+        self.ivars().symbol_name.borrow().clone()
+    }
+
     /// Re-renders the current symbol to match `font`, the way
     /// `UIImage.SymbolConfiguration(font:)` scales a symbol to a themed
     /// typeface.

@@ -152,6 +152,73 @@ pub fn set_alpha(view: &PlatformView, alpha: f64) {
     view.setAlpha(alpha);
 }
 
+/// The live subviews of `view`, in back-to-front order.
+#[must_use]
+pub fn subviews(view: &PlatformView) -> Vec<Retained<PlatformView>> {
+    view.subviews().to_vec()
+}
+
+/// The window `view` is attached to, if any.
+#[must_use]
+#[cfg(target_os = "macos")]
+pub fn window(view: &PlatformView) -> Option<Retained<objc2_app_kit::NSWindow>> {
+    view.window()
+}
+
+/// The window `view` is attached to, if any.
+#[must_use]
+#[cfg(target_os = "ios")]
+pub fn window(view: &PlatformView) -> Option<Retained<objc2_ui_kit::UIWindow>> {
+    view.window()
+}
+
+/// Marks `view` with a stable accessibility identifier, the string a test or
+/// an internal contract can find the view by. Pass `None` to clear it.
+pub fn set_accessibility_identifier(view: &PlatformView, identifier: Option<&str>) {
+    let identifier = identifier.map(objc2_foundation::NSString::from_str);
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSAccessibility;
+        view.setAccessibilityIdentifier(identifier.as_deref());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_ui_kit::UIAccessibilityIdentification;
+        view.setAccessibilityIdentifier(identifier.as_deref());
+    }
+}
+
+/// The accessibility identifier set on `view`, if any.
+#[must_use]
+pub fn accessibility_identifier(view: &PlatformView) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSAccessibility;
+        view.accessibilityIdentifier().map(|s| s.to_string())
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use objc2_ui_kit::UIAccessibilityIdentification;
+        view.accessibilityIdentifier()
+            .map(|identifier| identifier.to_string())
+    }
+}
+
+/// The tag (`UIView.tag`) used to marker-test a view without retaining a
+/// subclass reference. `NSView` has no tag of its own; identity checks there
+/// use the accessibility identifier.
+#[must_use]
+#[cfg(target_os = "ios")]
+pub fn tag(view: &PlatformView) -> isize {
+    view.tag()
+}
+
+/// Sets `view`'s tag; see [`tag`].
+#[cfg(target_os = "ios")]
+pub fn set_tag(view: &PlatformView, tag: isize) {
+    view.setTag(tag);
+}
+
 /// Declares `view` an accessibility element and gives it `label` (and, on
 /// `AppKit`, a tooltip of the same text). Pass text already stripped of
 /// bidirectional controls.

@@ -7,12 +7,19 @@
 //! for an object that implements the action and disables the item when none
 //! does. No action can reach an object that does not understand it.
 
-use bitflags::bitflags;
+use std::cell::RefCell;
+use std::fmt;
+use std::rc::Rc;
+
+use objc2::Message;
 use objc2::rc::Retained;
-use objc2::runtime::Sel;
-use objc2::{MainThreadMarker, MainThreadOnly, sel};
-use objc2_app_kit::{NSEventModifierFlags, NSMenu, NSMenuItem};
-use objc2_foundation::NSString;
+use objc2::runtime::{AnyObject, Sel};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+use objc2_app_kit::{NSColor, NSImage, NSMenu, NSMenuItem};
+use objc2_foundation::{NSMutableAttributedString, NSObject, NSObjectProtocol, NSRange, NSString};
+
+use crate::callback::guarded;
+use crate::menu::{Command, KeyModifiers, MenuTreeNode};
 
 /// A menu: a list of items, shown as the menu bar or as a submenu.
 ///
@@ -155,37 +162,6 @@ impl MenuAction {
     }
 }
 
-bitflags! {
-    /// Modifier keys held with a key equivalent.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct KeyModifiers: u8 {
-        /// The Command key, ⌘.
-        const COMMAND = 1 << 0;
-        /// The Option key, ⌥.
-        const OPTION = 1 << 1;
-        /// The Shift key, ⇧.
-        const SHIFT = 1 << 2;
-        /// The Control key, ⌃.
-        const CONTROL = 1 << 3;
-    }
-}
-
-impl KeyModifiers {
-    fn native(self) -> NSEventModifierFlags {
-        [
-            (Self::COMMAND, NSEventModifierFlags::Command),
-            (Self::OPTION, NSEventModifierFlags::Option),
-            (Self::SHIFT, NSEventModifierFlags::Shift),
-            (Self::CONTROL, NSEventModifierFlags::Control),
-        ]
-        .into_iter()
-        .filter(|(modifier, _)| self.contains(*modifier))
-        .fold(NSEventModifierFlags::empty(), |flags, (_, native)| {
-            flags | native
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use objc2_app_kit::NSEventModifierFlags;
@@ -210,5 +186,179 @@ mod tests {
             KeyModifiers::empty().native(),
             NSEventModifierFlags::empty()
         );
+    }
+}
+
+/// An `NSMenuItem` target that runs a Rust callback.
+pub struct MenuItemTargetIvars {
+    /// Called when the item is chosen.
+    action: RefCell<Option<Rc<dyn Fn()>>>,
+}
+
+impl fmt::Debug for MenuItemTargetIvars {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MenuItemTargetIvars").finish()
+    }
+}
+
+define_class!(
+    // SAFETY: `NSObject`'s designated initializer is `init`, which
+    // `MenuItemTarget::new` calls, and the class does not implement `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "CocoaUiMenuItemTarget"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = MenuItemTargetIvars]
+    #[derive(Debug)]
+    /// The target `AppKit` calls when a callback menu item is chosen.
+    pub struct MenuItemTarget;
+
+    // SAFETY: `NSObjectProtocol` asks nothing of an `NSObject`.
+    unsafe impl NSObjectProtocol for MenuItemTarget {}
+
+    impl MenuItemTarget {
+        // SAFETY: `menuItemFired:` is this class's own target action.
+        #[unsafe(method(menuItemFired:))]
+        fn menu_item_fired(&self, _sender: &NSMenuItem) {
+            guarded("MenuItemTarget menuItemFired:", || {
+                let handler = self.ivars().action.borrow().clone();
+                if let Some(handler) = handler {
+                    handler();
+                }
+            });
+        }
+    }
+);
+
+impl MenuItemTarget {
+    fn new(mtm: MainThreadMarker, handler: Rc<dyn Fn()>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(MenuItemTargetIvars {
+            action: RefCell::new(Some(handler)),
+        });
+        // SAFETY: `init` is `NSObject`'s designated initializer.
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
+impl MenuItem {
+    /// An item from a [`Command`]. `action` runs when it is chosen.
+    #[must_use]
+    pub fn command(mtm: MainThreadMarker, command: &Command, action: Rc<dyn Fn()>) -> Self {
+        // SAFETY: see the module safety note.
+        let item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                &NSString::from_str(&command.label),
+                Some(sel!(menuItemFired:)),
+                &NSString::from_str(&command.key_equivalent),
+            )
+        };
+        let target = MenuItemTarget::new(mtm, action);
+        // SAFETY: `setTarget:` accepts any object; the item holds it weakly,
+        // so the target is retained as the item's `representedObject` as well.
+        unsafe {
+            item.setTarget(Some(
+                std::ptr::from_ref::<MenuItemTarget>(target.as_ref())
+                    .cast::<AnyObject>()
+                    .as_ref()
+                    .unwrap_unchecked(),
+            ));
+        };
+        // SAFETY: `setRepresentedObject:` retains its argument.
+        unsafe {
+            item.setRepresentedObject(Some(
+                std::ptr::from_ref::<MenuItemTarget>(target.as_ref())
+                    .cast::<AnyObject>()
+                    .as_ref()
+                    .unwrap_unchecked(),
+            ));
+        }
+        Self::apply_command(&item, command)
+    }
+
+    /// An item titled `label` that opens `submenu`.
+    #[must_use]
+    pub fn submenu(mtm: MainThreadMarker, command: &Command, submenu: &NSMenu) -> Self {
+        // SAFETY: see the module safety note.
+        let item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                &NSString::from_str(&command.label),
+                None,
+                &NSString::new(),
+            )
+        };
+        item.setSubmenu(Some(submenu));
+        Self::apply_command(&item, command)
+    }
+
+    /// Applies a [`Command`]'s presentation to the item: enabled state,
+    /// checkmark, key modifiers, symbol image, subtitle and the destructive
+    /// style — `AppKit` draws a destructive command with the system-red
+    /// title.
+    fn apply_command(item: &NSMenuItem, command: &Command) -> Self {
+        item.setEnabled(command.enabled);
+        item.setState(if command.selected {
+            objc2_app_kit::NSControlStateValueOn
+        } else {
+            objc2_app_kit::NSControlStateValueOff
+        });
+        item.setKeyEquivalentModifierMask(command.modifiers.native());
+        if let Some(symbol) = &command.symbol
+            && let Some(image) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
+                &NSString::from_str(symbol),
+                None,
+            )
+        {
+            item.setImage(Some(&image));
+        }
+        if let Some(subtitle) = &command.subtitle {
+            item.setSubtitle(Some(&NSString::from_str(subtitle)));
+        }
+        if command.destructive {
+            let title = NSMutableAttributedString::initWithString(
+                item.mtm().alloc::<NSMutableAttributedString>(),
+                &NSString::from_str(&command.label),
+            );
+            // SAFETY: `addAttribute:value:range:` takes any attribute-value
+            // pair on a live attributed string.
+            unsafe {
+                title.addAttribute_value_range(
+                    objc2_app_kit::NSForegroundColorAttributeName,
+                    &NSColor::systemRedColor(),
+                    NSRange::new(0, title.length()),
+                );
+            }
+            item.setAttributedTitle(Some(&title));
+        }
+        Self {
+            item: item.retain(),
+        }
+    }
+}
+
+impl Menu {
+    /// Replaces the menu's contents with `nodes`.
+    pub fn set_nodes(&self, nodes: &[MenuTreeNode]) {
+        self.menu.removeAllItems();
+        let mtm = self.menu.mtm();
+        for node in nodes {
+            match node {
+                MenuTreeNode::Divider => self.add_separator(),
+                MenuTreeNode::Command(command, action) => {
+                    self.add_item(MenuItem::command(mtm, command, action.clone()));
+                }
+                MenuTreeNode::Submenu(command, children) => {
+                    let submenu = Self::new(mtm, &command.label);
+                    submenu.set_nodes(children);
+                    self.add_item(MenuItem::submenu(mtm, command, &submenu.menu));
+                }
+            }
+        }
+    }
+
+    /// The raw `NSMenu`.
+    #[must_use]
+    pub fn menu(&self) -> &NSMenu {
+        &self.menu
     }
 }

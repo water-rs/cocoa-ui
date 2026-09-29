@@ -115,6 +115,12 @@ impl ImageView {
         })
     }
 
+    /// The name of the system symbol shown, if one is set.
+    #[must_use]
+    pub fn symbol_name(&self) -> Option<String> {
+        self.ivars().symbol_name.borrow().clone()
+    }
+
     /// Re-renders the current symbol at `size` points and `weight` on the
     /// `NSFontWeight` scale — what a themed font asks of the symbol.
     ///
