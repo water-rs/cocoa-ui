@@ -35,10 +35,15 @@ use objc2_ui_kit::{
     UISearchController, UISearchResultsUpdating, UIViewController,
 };
 
+/// `viewWillAppear:` listener, called with `UIKit`'s `animated` flag.
+type WillAppearHandler = Rc<dyn Fn(bool)>;
+
 /// A plain content view controller, reporting when its view appears.
 pub struct NavContentControllerIvars {
     /// Called when the controller's view appears.
     appear: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Called when the controller's view is about to appear.
+    will_appear: RefCell<Option<WillAppearHandler>>,
     /// Called when the controller's view disappears.
     disappear: RefCell<Option<Rc<dyn Fn()>>>,
     /// The search field's change sink, reporting the current text.
@@ -71,6 +76,17 @@ define_class!(
     unsafe impl NSObjectProtocol for NavContentController {}
 
     impl NavContentController {
+        // SAFETY: overriding `viewWillAppear:` carries no obligations.
+        #[unsafe(method(viewWillAppear:))]
+        fn view_will_appear(&self, animated: bool) {
+            // SAFETY: see the module safety note.
+            let _: () = unsafe { msg_send![super(self), viewWillAppear: animated] };
+            let handler = self.ivars().will_appear.borrow().clone();
+            if let Some(handler) = handler {
+                handler(animated);
+            }
+        }
+
         // SAFETY: overriding `viewDidAppear:` carries no obligations.
         #[unsafe(method(viewDidAppear:))]
         fn view_did_appear(&self, animated: bool) {
@@ -102,6 +118,7 @@ impl NavContentController {
     pub fn new(mtm: MainThreadMarker, view: &objc2_ui_kit::UIView) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(NavContentControllerIvars {
             appear: RefCell::new(None),
+            will_appear: RefCell::new(None),
             disappear: RefCell::new(None),
             search_change: RefCell::new(None),
             search_updater: RefCell::new(None),
@@ -123,6 +140,12 @@ impl NavContentController {
     /// Runs `handler` each time the page's view appears.
     pub fn set_appear_handler(&self, handler: impl Fn() + 'static) {
         self.ivars().appear.replace(Some(Rc::new(handler)));
+    }
+
+    /// Runs `handler` each time the page's view is about to appear, with
+    /// `UIKit`'s `animated` argument.
+    pub fn set_will_appear_handler(&self, handler: impl Fn(bool) + 'static) {
+        self.ivars().will_appear.replace(Some(Rc::new(handler)));
     }
 
     /// Runs `handler` each time the page's view disappears.
@@ -832,6 +855,13 @@ impl NavigationController {
     /// [`NavContentController::set_page`]; this is the direct override.
     pub fn set_bar_hidden(&self, hidden: bool, animated: bool) {
         self.setNavigationBarHidden_animated(hidden, animated);
+    }
+
+    /// `navigationBar.prefersLargeTitles`: the gate each page's
+    /// `largeTitleDisplayMode` consults — without it the per-item mode is
+    /// inert and every title draws inline.
+    pub fn set_prefers_large_titles(&self, prefers: bool) {
+        self.navigationBar().setPrefersLargeTitles(prefers);
     }
 
     /// The pages currently on the stack, root first.
