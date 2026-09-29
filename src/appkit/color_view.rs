@@ -67,7 +67,7 @@ impl ColorView {
     /// The color is pushed to the backing layer's `backgroundColor` — a plain
     /// `NSView` redraw needs no `drawRect:` pass.
     pub fn set_color(&self, color: Option<&NSColor>) {
-        let cg = color.map(|color| color.CGColor());
+        let cg = color.map(NSColor::CGColor);
         if let Some(layer) = self.layer() {
             layer.setBackgroundColor(cg.as_deref());
         }

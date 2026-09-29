@@ -44,7 +44,7 @@ struct Inner {
     /// The editing notifications feeding `observers`, kept registered for
     /// the target's life. A cell because each observer's closure captures a
     /// `Weak` to this `Inner`, so they can only register after it exists.
-    _notifications: RefCell<Vec<NotificationObserver>>,
+    notifications: RefCell<Vec<NotificationObserver>>,
 }
 
 impl core::fmt::Debug for Inner {
@@ -125,7 +125,7 @@ pub fn is_first_responder(view: &PlatformView) -> bool {
             || view.window().is_some_and(|window| {
                 window
                     .firstResponder()
-                    .is_some_and(|first| ptr::eq(&*first, responder))
+                    .is_some_and(|first| ptr::eq(&raw const *first, responder))
             })
     }
     #[cfg(target_os = "ios")]
@@ -274,14 +274,14 @@ pub fn install(mtm: MainThreadMarker, view: &PlatformView) -> FocusTarget {
         view: Retained::from(view),
         observers: RefCell::new(Vec::new()),
         next: Cell::new(0),
-        _notifications: RefCell::new(Vec::new()),
+        notifications: RefCell::new(Vec::new()),
     });
 
     // The target listens for the view's own editing notifications: the
     // object filter keeps every other field's begin/end out of this
     // target's emit.
     inner
-        ._notifications
+        .notifications
         .borrow_mut()
         .extend(editing_notifications().into_iter().map(|(name, focus)| {
             observe_object(mtm, &name, AsRef::<AnyObject>::as_ref(view), {
@@ -320,7 +320,7 @@ fn collect(view: &PlatformView, found: &mut Vec<FocusTarget>) {
             targets.remove(&ptr::from_ref(view));
         }
     });
-    for subview in view.subviews().iter() {
+    for subview in &view.subviews() {
         collect(&subview, found);
     }
 }
