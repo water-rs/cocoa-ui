@@ -713,12 +713,14 @@ fn respond_to_scheme_task(task: &ProtocolObject<dyn WKURLSchemeTask>, handler: &
             path: url.as_ref().map_or_else(
                 || String::from("/"),
                 |url| {
+                    // SAFETY: documented above — no binding for percentEncodedPath.
                     let path: Option<Retained<NSString>> =
                         unsafe { msg_send![&**url, percentEncodedPath] };
                     path.map_or_else(|| String::from("/"), |path| path.to_string())
                 },
             ),
             query: url.as_ref().and_then(|url| {
+                // SAFETY: documented above — no binding for percentEncodedQuery.
                 let query: Option<Retained<NSString>> =
                     unsafe { msg_send![&**url, percentEncodedQuery] };
                 query.map(|query| query.to_string())
@@ -1414,16 +1416,16 @@ impl Drop for WebViewController {
     }
 }
 
-/// Resolves a `Location` header value against the response URL it arrived
-/// with — `URL(string:relativeTo:)` semantics, so a relative header is
-/// rooted at the response and an unparseable one passes through unchanged.
+/// Resolves a `Location` header value against the response URL it arrived with.
+///
+/// `URL(string:relativeTo:)` semantics, so a relative header is rooted at the
+/// response and an unparseable one passes through unchanged.
 #[must_use]
 pub fn resolve_redirect(base: &str, location: &str) -> String {
     let base = NSURL::URLWithString(&NSString::from_str(base));
     NSURL::URLWithString_relativeToURL(&NSString::from_str(location), base.as_deref())
         .and_then(|url| url.absoluteString())
-        .map(|url| url.to_string())
-        .unwrap_or_else(|| location.to_string())
+        .map_or_else(|| location.to_string(), |url| url.to_string())
 }
 
 /// Evaluates a server trust reference — `SecTrustEvaluateWithError`.
