@@ -240,6 +240,13 @@ pub fn set_accessibility_label(view: &PlatformView, label: &str) {
     }
 }
 
+/// Whether `view` clips its subviews to its bounds — `UIView`'s
+/// `clipsToBounds`, a `UIKit`-only property.
+#[cfg(target_os = "ios")]
+pub fn set_clips_to_bounds(view: &PlatformView, clips: bool) {
+    view.setClipsToBounds(clips);
+}
+
 /// Whether `view` sizes itself by its frame rather than by Auto Layout
 /// constraints — `true` for views a layout container positions manually.
 pub fn set_translates_autoresizing(view: &PlatformView, enabled: bool) {
