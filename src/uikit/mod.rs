@@ -61,6 +61,7 @@ pub use date_picker::{DatePicker, DatePickerMode};
 pub use host_view::{HitTest, HostView};
 pub use image::ImageView;
 pub mod label;
+pub use menu::{Menu, MenuAction, MenuButton, MenuElement};
 mod picker;
 pub use picker::Picker;
 pub mod toggle;

@@ -253,6 +253,13 @@ pub fn set_translates_autoresizing(view: &PlatformView, enabled: bool) {
     view.setTranslatesAutoresizingMaskIntoConstraints(enabled);
 }
 
+/// Whether `view` receives touch events itself. `false` on a view laid over
+/// an interactive control lets touches fall through to the control.
+#[cfg(target_os = "ios")]
+pub fn set_user_interaction_enabled(view: &PlatformView, enabled: bool) {
+    view.setUserInteractionEnabled(enabled);
+}
+
 /// Makes `parent`'s subviews exactly `ordered`, in that z-order, reusing the
 /// subview instances already attached.
 #[cfg(target_os = "macos")]

@@ -1,4 +1,6 @@
-//! `UIMenu` built from the shared menu tree.
+//! `UIMenu` built from the shared menu tree, plus the button that presents
+//! one and the `Menu`/`MenuElement`/`MenuAction` tree a handler builds one
+//! from imperatively.
 //!
 //! `elements` turns [`MenuTreeNode`]s into `UIMenuElement`s — dividers
 //! become inline groups, commands become `UIAction`s carrying the command's
@@ -9,21 +11,24 @@
 //!
 //! The `unsafe` here builds `UIAction`s from `RcBlock`s and calls `objc2`/
 //! `UIKit` bindings marked unsafe because `UIKit` objects are main-thread
-//! only, which [`MainThreadMarker`] guarantees at construction.
+//! only, which [`MainThreadMarker`] guarantees at construction. `UIAction`'s
+//! handler block is `copy`ed by the call that consumes it, so the stack
+//! block it is built from may be dropped once construction returns.
 
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use block2::RcBlock;
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
-use objc2_foundation::NSString;
+use objc2_foundation::{NSArray, NSString};
 use objc2_ui_kit::{
-    UIAction, UIImage, UIMenu, UIMenuElement, UIMenuElementAttributes, UIMenuElementState,
-    UIMenuOptions,
+    UIAction, UIColor, UIImage, UIMenu, UIMenuElement, UIMenuElementAttributes, UIMenuElementState,
+    UIMenuOptions, UIView,
 };
-use std::ptr::NonNull;
 
 use crate::menu::{Command, MenuTreeNode};
+use crate::uikit::button::{Button, Chrome};
 
 /// A `UIMenu` from a menu tree.
 #[must_use]
@@ -142,4 +147,186 @@ fn command_element(
 
 fn menu_image(symbol: Option<&str>) -> Option<Retained<UIImage>> {
     symbol.and_then(|symbol| UIImage::systemImageNamed(&NSString::from_str(symbol)))
+}
+
+
+/// One child of a [`Menu`]: a triggerable action or a nested menu.
+#[derive(Debug, Clone)]
+pub enum MenuElement {
+    /// An action the user picks.
+    Action(MenuAction),
+    /// A nested menu shown hierarchically.
+    Submenu(Menu),
+}
+
+impl MenuElement {
+    fn native(&self) -> Retained<UIMenuElement> {
+        match self {
+            Self::Action(action) => action.action.clone().into_super(),
+            Self::Submenu(menu) => menu.menu.clone().into_super(),
+        }
+    }
+}
+
+/// A `UIMenu`: an immutable list of [`MenuElement`] children.
+///
+/// A `Menu` is a handle: clones refer to the same menu.
+#[derive(Debug, Clone)]
+pub struct Menu {
+    menu: Retained<UIMenu>,
+}
+
+impl Menu {
+    /// A menu titled `title` with `children`; `icon`, when given, is an
+    /// `SF Symbols` name drawn beside the title in a submenu row.
+    ///
+    /// `inline` marks the menu `.displayInline`: its children flatten into
+    /// their parent as a labelled group rather than nesting.
+    #[must_use]
+    pub fn new(
+        mtm: MainThreadMarker,
+        title: &str,
+        icon: Option<&str>,
+        inline: bool,
+        children: &[MenuElement],
+    ) -> Self {
+        let image = icon.and_then(|name| UIImage::systemImageNamed(&NSString::from_str(name)));
+        let options = if inline {
+            UIMenuOptions::DisplayInline
+        } else {
+            UIMenuOptions::empty()
+        };
+        let elements: Vec<Retained<UIMenuElement>> =
+            children.iter().map(MenuElement::native).collect();
+        let menu = UIMenu::menuWithTitle_image_identifier_options_children(
+            &NSString::from_str(title),
+            image.as_deref(),
+            None,
+            options,
+            &NSArray::from_retained_slice(&elements),
+            mtm,
+        );
+        Self { menu }
+    }
+}
+
+/// A `UIAction`: one pickable row of a [`Menu`].
+///
+/// A `MenuAction` is a handle: clones refer to the same action.
+#[derive(Debug, Clone)]
+pub struct MenuAction {
+    action: Retained<UIAction>,
+}
+
+impl MenuAction {
+    /// An action titled `title` that runs `handler` when picked.
+    #[must_use]
+    pub fn new(mtm: MainThreadMarker, title: &str, handler: impl Fn() + 'static) -> Self {
+        let block = RcBlock::new(move |_action: NonNull<UIAction>| handler());
+        // SAFETY: `handler` takes a block the call copies, so the stack
+        // block may be dropped once the call returns.
+        let action = unsafe {
+            UIAction::actionWithTitle_image_identifier_handler(
+                &NSString::from_str(title),
+                None,
+                None,
+                RcBlock::as_ptr(&block).cast(),
+                mtm,
+            )
+        };
+        Self { action }
+    }
+
+    /// The same action, subtitled `subtitle` beneath its title when given.
+    #[must_use]
+    pub fn with_subtitle(self, subtitle: Option<&str>) -> Self {
+        self.action
+            .setSubtitle(subtitle.map(NSString::from_str).as_deref());
+        self
+    }
+
+    /// The same action, drawn with the `SF Symbols` image `name` when
+    /// given.
+    #[must_use]
+    pub fn with_icon(self, name: Option<&str>) -> Self {
+        if let Some(name) = name {
+            self.action
+                .setImage(UIImage::systemImageNamed(&NSString::from_str(name)).as_deref());
+        }
+        self
+    }
+
+    /// The same action, greyed out when `disabled` is true.
+    #[must_use]
+    pub fn with_disabled(self, disabled: bool) -> Self {
+        let mut attributes = self.action.attributes();
+        attributes.set(UIMenuElementAttributes::Disabled, disabled);
+        self.action.setAttributes(attributes);
+        self
+    }
+
+    /// The same action, drawn in the system's destructive red when
+    /// `destructive` is true.
+    #[must_use]
+    pub fn with_destructive(self, destructive: bool) -> Self {
+        let mut attributes = self.action.attributes();
+        attributes.set(UIMenuElementAttributes::Destructive, destructive);
+        self.action.setAttributes(attributes);
+        self
+    }
+
+    /// The same action, drawn with a checkmark when `selected` is true.
+    #[must_use]
+    pub fn with_selected(self, selected: bool) -> Self {
+        self.action.setState(if selected {
+            UIMenuElementState::On
+        } else {
+            UIMenuElementState::Off
+        });
+        self
+    }
+}
+
+/// A button whose primary action opens a `UIMenu`.
+///
+/// Built on [`Button`] with plain chrome and no content padding: the owning
+/// layout supplies both the label view and the padding it measured with.
+///
+/// A `MenuButton` is a handle: clones refer to the same control.
+#[derive(Debug, Clone)]
+pub struct MenuButton {
+    button: Button,
+}
+
+impl MenuButton {
+    /// A plain-chrome button whose primary action opens its menu.
+    #[must_use]
+    pub fn new(mtm: MainThreadMarker) -> Self {
+        let button = Button::new(mtm);
+        button.set_chrome(Chrome::Plain, mtm);
+        button.setShowsMenuAsPrimaryAction(true);
+        Self { button }
+    }
+
+    /// Replaces the menu the button opens.
+    pub fn set_menu(&self, menu: &Menu) {
+        self.button.setMenu(Some(&menu.menu));
+    }
+
+    /// The color the button's chrome derives from.
+    pub fn set_tint_color(&self, color: &UIColor) {
+        self.button.set_tint_color(color);
+    }
+
+    /// The button, for adding to a view hierarchy and framing.
+    #[must_use]
+    pub fn view(&self) -> &UIView {
+        &self.button
+    }
+}
+
+impl AsRef<UIView> for MenuButton {
+    fn as_ref(&self) -> &UIView {
+        &self.button
+    }
 }

@@ -75,7 +75,7 @@ pub mod toggle;
 pub use label::Label;
 mod slider;
 pub use crate::menu::{Command, KeyModifiers, MenuTreeNode};
-pub use menu::{Menu, MenuAction, MenuItem};
+pub use menu::{Menu, MenuAction, MenuButton, MenuItem};
 pub use slider::Slider;
 mod progress;
 pub use progress::Progress;
