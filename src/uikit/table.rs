@@ -410,6 +410,28 @@ impl TableView {
         self.ivars().source.replace(Some(source));
     }
 
+    /// The row insets a stock list cell takes, from
+    /// `UIListContentConfiguration.cell()`'s layout margins.
+    #[must_use]
+    pub fn theme_row_insets(mtm: MainThreadMarker) -> EdgeInsets {
+        let margins = UIListContentConfiguration::cellConfiguration(mtm).directionalLayoutMargins();
+        EdgeInsets {
+            top: margins.top,
+            bottom: margins.bottom,
+            left: margins.leading,
+            right: margins.trailing,
+        }
+    }
+
+    /// The default height a stock `UITableViewCell` reports — the minimum a
+    /// row takes when `min_row_height` is unset.
+    #[must_use]
+    pub fn stock_row_height(&self) -> f64 {
+        TableCell::new(self.mtm())
+            .sizeThatFits(CGSize::new(1000.0, 1000.0))
+            .height
+    }
+
     /// The table's directional layout margins.
     pub fn directional_margins(&self) -> NSDirectionalEdgeInsets {
         self.directionalLayoutMargins()
