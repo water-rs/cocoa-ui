@@ -29,7 +29,7 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_foundation::{NSArray, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
-    UIBarButtonItem, UIBarButtonItemStyle, UIControl, UIGestureRecognizer,
+    UIBarButtonItem, UIBarButtonItemStyle, UIButton, UIControl, UIGestureRecognizer,
     UIGestureRecognizerDelegate, UINavigationBar, UINavigationController,
     UINavigationControllerDelegate, UINavigationItem, UINavigationItemLargeTitleDisplayMode,
     UISearchController, UISearchResultsUpdating, UIViewController,
@@ -644,6 +644,58 @@ pub fn first_control(view: &objc2_ui_kit::UIView) -> Option<Retained<UIControl>>
         }
     }
     None
+}
+
+/// The first `UIButton` in `view`'s subtree, depth-first — the button chrome
+/// forwards its action to (`firstButton` in the Swift host).
+#[must_use]
+pub fn first_button(view: &objc2_ui_kit::UIView) -> Option<Retained<UIButton>> {
+    if let Some(button) = view.downcast_ref::<UIButton>() {
+        return Some(Retained::from(button));
+    }
+    for subview in &view.subviews() {
+        if let Some(button) = first_button(&subview) {
+            return Some(button);
+        }
+    }
+    None
+}
+
+/// A `UIBarButtonItem` drawing `image` inside the bar's chrome — the symbol
+/// and view-rendered icons alike; `action` fires on tap.
+#[must_use]
+pub fn image_bar_item(
+    mtm: MainThreadMarker,
+    image: Option<&objc2_ui_kit::UIImage>,
+    action: Option<Rc<dyn Fn()>>,
+) -> Retained<UIBarButtonItem> {
+    // SAFETY: `initWithImage:style:target:action:` is a `UIBarButtonItem`
+    // designated initializer; nil target/action are valid.
+    let item = unsafe {
+        UIBarButtonItem::initWithImage_style_target_action(
+            mtm.alloc(),
+            image,
+            UIBarButtonItemStyle::Plain,
+            None,
+            None,
+        )
+    };
+    if let Some(action) = action {
+        // SAFETY: `UIAction::actionWithHandler:` retains the block, which
+        // owns the `Rc` for the item's life.
+        let ui_action = unsafe {
+            objc2_ui_kit::UIAction::actionWithHandler(
+                block2::RcBlock::into_raw(RcBlock::new(
+                    move |_: core::ptr::NonNull<objc2_ui_kit::UIAction>| {
+                        action();
+                    },
+                )),
+                mtm,
+            )
+        };
+        item.setPrimaryAction(Some(&ui_action));
+    }
+    item
 }
 
 /// The navigation stack's model: the pages and the current pop state.

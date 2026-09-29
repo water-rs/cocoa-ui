@@ -921,9 +921,83 @@ impl WindowToolbar {
                     .borrow()
                     .get(index)
                     .map(|i| (i.view.clone(), i.size))?;
-                Some(self.hosting_item(&identifier, &item.0, Some(item.1)))
+                Some(self.window_item(&identifier, &item.0, Some(item.1)))
             }
         }
+    }
+
+    /// Builds a toolbar item for one child of the window's toolbar content.
+    ///
+    /// A button whose label draws a platform symbol becomes a real
+    /// `NSToolbarItem` — icon in the capsule, name kept for the overflow
+    /// menu, tooltip and assistive technology, running the button's action —
+    /// exactly as a navigation action does. A label that is not a platform
+    /// symbol renders into a template image the toolbar tints like its own
+    /// items, and any other child is hosted as the view it is.
+    fn window_item(
+        &self,
+        identifier: &NSToolbarItemIdentifier,
+        view: &Retained<NSView>,
+        size: Option<Size>,
+    ) -> Retained<NSToolbarItem> {
+        let Some(button) = crate::appkit::control::first_button(view) else {
+            return self.hosting_item(identifier, view, size);
+        };
+        // The button's label view is its sibling: the button leaf mounts the
+        // button and its label container into the same parent.
+        let label_view = {
+            let button_view: *const NSView = &raw const ****button;
+            // SAFETY: `superview`/`subviews` are ordinary main-thread reads.
+            unsafe { button.superview() }.and_then(|parent| {
+                parent
+                    .subviews()
+                    .into_iter()
+                    .find(|subview| !std::ptr::eq::<NSView>(&raw const **subview, button_view))
+            })
+        };
+        let image = label_view
+            .as_ref()
+            .and_then(|label| crate::appkit::image::first_symbol_view(label))
+            .and_then(|symbol_view| symbol_view.symbol_name())
+            .and_then(|name| crate::appkit::image::symbol_image(&name))
+            .or_else(|| {
+                label_view
+                    .as_ref()
+                    .and_then(|label| crate::bitmap::view_template_image(label, 18.0))
+            });
+        let Some(image) = image else {
+            return self.hosting_item(identifier, view, size);
+        };
+        let item =
+            NSToolbarItem::initWithItemIdentifier(MainThreadMarker::from(self).alloc(), identifier);
+        item.setImage(Some(&image));
+        // SAFETY: `accessibilityLabel` is a plain getter on the main thread.
+        let text: Option<Retained<NSString>> = unsafe { msg_send![&button, accessibilityLabel] };
+        let text = text.map_or_else(String::new, |label| label.to_string());
+        let label = NSString::from_str(&text);
+        item.setLabel(&label);
+        item.setPaletteLabel(&label);
+        if !text.is_empty() {
+            item.setToolTip(Some(&label));
+        }
+        item.setBordered(true);
+        // SAFETY: `self` implements `actionInvoked:`; the target is an assign
+        // reference, not a retain cycle.
+        unsafe { item.setTarget(Some(self.as_ref())) };
+        // SAFETY: `setAction:` registers `actionInvoked:`.
+        unsafe { item.setAction(Some(sel!(actionInvoked:))) };
+        // The label's own button carries the handler, so the toolbar item
+        // runs the same action the view would have.
+        self.ivars()
+            .item_actions
+            .borrow_mut()
+            .insert(identifier.to_string(), {
+                Rc::new(move || {
+                    // SAFETY: toolbar actions fire on the main thread.
+                    unsafe { crate::appkit::control::activate(button.control()) };
+                })
+            });
+        item
     }
 
     /// Builds a toolbar item for one navigation action.

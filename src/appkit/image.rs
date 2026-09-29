@@ -215,3 +215,21 @@ pub fn system_symbol(
 pub fn symbol_image(name: &str) -> Option<Retained<NSImage>> {
     system_symbol(name, None)
 }
+
+/// The first [`ImageView`] holding a named system symbol in `view`'s
+/// subtree, depth-first — the icon chrome reads when a label's own content
+/// is a platform symbol (`firstSystemIcon` in the Swift host).
+#[must_use]
+pub fn first_symbol_view(view: &objc2_app_kit::NSView) -> Option<Retained<ImageView>> {
+    if let Some(image) = view.downcast_ref::<ImageView>()
+        && image.symbol_name().is_some()
+    {
+        return Some(Retained::from(image));
+    }
+    for subview in &view.subviews() {
+        if let Some(image) = first_symbol_view(&subview) {
+            return Some(image);
+        }
+    }
+    None
+}

@@ -25,6 +25,22 @@ pub fn first_control(view: &NSView) -> Option<Retained<NSControl>> {
     None
 }
 
+/// The first [`Button`] in `view`'s subtree, depth-first — the button chrome
+/// introspects when it presents a toolbar item from the button's own surface
+/// (`firstButton` in the Swift host).
+#[must_use]
+pub fn first_button(view: &NSView) -> Option<Retained<crate::appkit::Button>> {
+    if let Some(button) = view.downcast_ref::<crate::appkit::Button>() {
+        return Some(Retained::from(button));
+    }
+    for subview in &view.subviews() {
+        if let Some(button) = first_button(&subview) {
+            return Some(button);
+        }
+    }
+    None
+}
+
 /// Activates `control` as if the user clicked it — `performClick:`.
 ///
 /// # Safety

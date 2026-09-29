@@ -319,6 +319,81 @@ pub fn close_capture_window(window: &CaptureWindow) {
     window.setHidden(true);
 }
 
+/// `view` rasterized as a template `NSImage`, capped at `max_side` points —
+/// the toolbar-icon shape of chrome-presented views.
+///
+/// The alpha channel is the image, so the toolbar tints it like its own items
+/// instead of showing the view's accent-tinted pixels. `cacheDisplay` handles
+/// views without a backing layer; GPU-surface content (Metal layers) does
+/// not render through it.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn view_template_image(
+    view: &crate::PlatformView,
+    max_side: f64,
+) -> Option<Retained<objc2_app_kit::NSImage>> {
+    let bounds = view.bounds();
+    if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+        return None;
+    }
+    let rep = view.bitmapImageRepForCachingDisplayInRect(bounds)?;
+    force_text_fields_display(view);
+    view.cacheDisplayInRect_toBitmapImageRep(bounds, &rep);
+    let image = rep.CGImage()?;
+    let shrink = (max_side / f64::max(bounds.size.width, bounds.size.height)).min(1.0);
+    Some(template_image(
+        &image,
+        Size::new(bounds.size.width * shrink, bounds.size.height * shrink),
+    ))
+}
+
+/// `view` rasterized as a template `UIImage`, capped at `max_side` points —
+/// the `UIKit` half of the macOS helper.
+///
+/// Bar items draw a declared icon as an image inside the bar's chrome rather
+/// than hosting the accent-tinted view. GPU-surface content does not render
+/// through `renderInContext:`.
+#[cfg(target_os = "ios")]
+#[must_use]
+pub fn view_template_image(
+    view: &crate::PlatformView,
+    max_side: f64,
+) -> Option<Retained<objc2_ui_kit::UIImage>> {
+    let bounds = view.bounds();
+    if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+        return None;
+    }
+    let scale = {
+        use objc2_ui_kit::UITraitEnvironment;
+        // SAFETY: an ordinary main-thread trait-environment read.
+        let scale = unsafe { view.traitCollection().displayScale() };
+        if scale > 0.0 { scale } else { 2.0 }
+    };
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a view's pixel dimensions fit usize and are positive"
+    )]
+    let width = (bounds.size.width * scale).ceil() as usize;
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a view's pixel dimensions fit usize and are positive"
+    )]
+    let height = (bounds.size.height * scale).ceil() as usize;
+    let mut pixels = vec![0u8; width * height * BYTES_PER_PIXEL];
+    let context = bitmap_context(&mut pixels, width, height)?;
+    scale_to_pixels(&context, scale);
+    with_uikit_context(&context, || {
+        begin_layer_flip(&context, bounds.size.height);
+        render_layer(&view.layer(), &context);
+        end_layer_flip(&context);
+    });
+    let image = context_image(&context)?;
+    let shrink = (max_side / f64::max(bounds.size.width, bounds.size.height)).min(1.0);
+    template_image(&image, scale / shrink)
+}
+
 /// Any connected `UIWindowScene` — `WuiCaptureDisplay`'s `requireCaptureDisplay`:
 /// capture windows must attach to a real scene, and any connected one works.
 #[cfg(target_os = "ios")]
