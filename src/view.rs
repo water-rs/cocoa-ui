@@ -555,6 +555,13 @@ pub fn set_user_interaction_enabled(view: &PlatformView, enabled: bool) {
     view.setUserInteractionEnabled(enabled);
 }
 
+/// The color `view` draws behind its content — `UIView`'s `backgroundColor`;
+/// `None` restores transparent.
+#[cfg(target_os = "ios")]
+pub fn set_background_color(view: &PlatformView, color: Option<&objc2_ui_kit::UIColor>) {
+    view.setBackgroundColor(color);
+}
+
 /// The color `view` and the controls inside it tint with — `UIView`'s
 /// `tintColor`, inherited down the view tree until a subview overrides it.
 #[cfg(target_os = "ios")]
