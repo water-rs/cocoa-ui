@@ -209,11 +209,15 @@ pub struct TextMetrics {
 
 /// The `NSTextStorage`/`NSLayoutManager`/`NSTextContainer` stack one
 /// measurement runs through, laid out at `width` points.
+///
+/// `NSLayoutManager`'s `textStorage` back-reference is `assign` — it does not
+/// retain the storage — so the storage is returned alongside the manager and
+/// callers must keep it alive for as long as they query the layout.
 fn layout(
     mtm: MainThreadMarker,
     text: &NSAttributedString,
     width: f64,
-) -> Retained<NSLayoutManager> {
+) -> (Retained<NSTextStorage>, Retained<NSLayoutManager>) {
     let storage = NSTextStorage::new();
     storage.setAttributedString(text);
     let layout_manager = NSLayoutManager::new();
@@ -229,7 +233,7 @@ fn layout(
     container.setLineFragmentPadding(0.0);
     layout_manager.addTextContainer(&container);
     layout_manager.ensureLayoutForTextContainer(&container);
-    layout_manager
+    (storage, layout_manager)
 }
 
 /// The glyph index at which each laid-out line begins: a glyph's effective
@@ -243,6 +247,9 @@ fn line_starts(layout_manager: &NSLayoutManager, glyph_count: usize) -> Vec<usiz
         unsafe {
             layout_manager
                 .lineFragmentRectForGlyphAtIndex_effectiveRange(glyph, &raw mut effective_range);
+        }
+        if effective_range.length == 0 {
+            break;
         }
         starts.push(effective_range.location);
         glyph = effective_range.location + effective_range.length;
@@ -281,7 +288,7 @@ pub fn measure(
         WrapWidth::Fixed(width) => width,
         WrapWidth::Unbreakable => widest_unbreakable_run(attributed, scale),
     };
-    let layout_manager = layout(mtm, attributed, width);
+    let (_storage, layout_manager) = layout(mtm, attributed, width);
     let glyph_count = layout_manager.numberOfGlyphs();
     if glyph_count == 0 {
         return TextMetrics {
@@ -312,6 +319,15 @@ pub fn measure(
                 std::ptr::null_mut(),
             )
         };
+        // `characterRange(forGlyphRange:)` can return a range reaching past
+        // the string end for glyph ranges that cover trailing control
+        // characters; `attributedSubstring(from:)` throws on overflow.
+        let char_range = NSRange::new(
+            char_range.location,
+            char_range
+                .length
+                .min(attributed.length().saturating_sub(char_range.location)),
+        );
         (
             attributed.attributedSubstringFromRange(char_range),
             last_line_range.location,
@@ -387,7 +403,7 @@ fn widest_unbreakable_run(attributed: &NSAttributedString, scale: f64) -> f64 {
         }
         let range = NSRange::new(
             token.location.cast_unsigned(),
-            clipped.location + clipped.length,
+            clipped.location + clipped.length - token.location.cast_unsigned(),
         );
         let piece = attributed.attributedSubstringFromRange(range);
         let rect = piece.boundingRectWithSize_options_context(
