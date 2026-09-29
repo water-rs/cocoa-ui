@@ -254,15 +254,191 @@ fn set_needs_layout(view: &PlatformView) {
     view.setNeedsLayout();
 }
 
+/// The view's superview, if attached.
+#[must_use]
 #[cfg(target_os = "macos")]
-fn superview(view: &PlatformView) -> Option<Retained<PlatformView>> {
+pub fn superview(view: &PlatformView) -> Option<Retained<PlatformView>> {
     // SAFETY: superview walking is a main-thread read of the view hierarchy.
     unsafe { view.superview() }
 }
 
+/// The view's superview, if attached.
+#[must_use]
 #[cfg(target_os = "ios")]
-fn superview(view: &PlatformView) -> Option<Retained<PlatformView>> {
+pub fn superview(view: &PlatformView) -> Option<Retained<PlatformView>> {
     view.superview()
+}
+
+/// The view's backing layer — `UIView` always has one; an `NSView` gains one
+/// the first time `wantsLayer` is set, which this does when nil.
+#[must_use]
+pub fn layer(view: &PlatformView) -> Option<Retained<objc2_quartz_core::CALayer>> {
+    #[cfg(target_os = "macos")]
+    {
+        view.setWantsLayer(true);
+        view.layer()
+    }
+    #[cfg(target_os = "ios")]
+    {
+        Some(view.layer())
+    }
+}
+
+/// Whether `view` is hidden.
+#[must_use]
+pub fn is_hidden(view: &PlatformView) -> bool {
+    view.isHidden()
+}
+
+/// `view`'s opacity (`alphaValue`/`alpha`).
+#[must_use]
+pub fn alpha(view: &PlatformView) -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        view.alphaValue()
+    }
+    #[cfg(target_os = "ios")]
+    {
+        view.alpha()
+    }
+}
+
+/// Converts `rect` from `view`'s coordinate space into `to`'s (`None` means
+/// the window's base space).
+#[must_use]
+pub fn convert_rect(view: &PlatformView, rect: Rect, to: Option<&PlatformView>) -> Rect {
+    view.convertRect_toView(rect.into(), to).into()
+}
+
+/// The size `view` prefers when unconstrained (`fittingSize` on `AppKit`,
+/// `sizeThatFits` of an unbounded proposal is meaningless on `UIKit` where
+/// callers pass the proposal through).
+#[must_use]
+#[cfg(target_os = "macos")]
+pub fn fitting_size(view: &PlatformView) -> crate::geometry::Size {
+    view.fittingSize().into()
+}
+
+/// The size `view` prefers for `proposed` points.
+#[must_use]
+#[cfg(target_os = "ios")]
+pub fn size_that_fits(
+    view: &PlatformView,
+    proposed: crate::geometry::Size,
+) -> crate::geometry::Size {
+    view.sizeThatFits(proposed.into()).into()
+}
+
+/// Marks `view` and its subtree as needing layout, then flushes it.
+#[cfg(target_os = "ios")]
+pub fn layout_immediately(view: &PlatformView) {
+    view.setNeedsLayout();
+    view.layoutIfNeeded();
+}
+
+/// Marks `view` and its subtree as needing display, then draws it.
+#[cfg(target_os = "ios")]
+pub fn display_immediately(view: &PlatformView) {
+    view.setNeedsDisplay();
+    view.layer().displayIfNeeded();
+}
+
+/// Performs any pending layout on `view`'s layer tree.
+#[cfg(target_os = "ios")]
+pub fn layout_layer_immediately(view: &PlatformView) {
+    view.layer().layoutIfNeeded();
+}
+
+/// Performs any pending layout on `view`'s tree.
+#[cfg(target_os = "macos")]
+pub fn layout_immediately(view: &PlatformView) {
+    view.setNeedsLayout(true);
+    view.layoutSubtreeIfNeeded();
+}
+
+/// Performs any pending layout on `view`'s layer tree, after ensuring the
+/// view is layer-backed.
+#[cfg(target_os = "macos")]
+pub fn layout_layer_immediately(view: &PlatformView) {
+    view.setWantsLayer(true);
+    if let Some(layer) = view.layer() {
+        layer.layoutIfNeeded();
+    }
+}
+
+/// Performs any pending display on `view`'s tree, after ensuring the view is
+/// layer-backed.
+#[cfg(target_os = "macos")]
+pub fn display_immediately(view: &PlatformView) {
+    view.setWantsLayer(true);
+    view.setNeedsDisplay(true);
+    view.displayIfNeeded();
+}
+
+/// Ensures `view` and every descendant is layer-backed.
+#[cfg(target_os = "macos")]
+pub fn ensure_layer_backed(view: &PlatformView) {
+    view.setWantsLayer(true);
+    for subview in &view.subviews() {
+        ensure_layer_backed(&subview);
+    }
+}
+
+/// Prepares `view` for an off-screen layer capture: everything
+/// layer-backed, laid out, and displayed.
+#[cfg(target_os = "macos")]
+pub fn prepare_for_capture(view: &PlatformView) {
+    ensure_layer_backed(view);
+    layout_immediately(view);
+    layout_layer_immediately(view);
+    display_immediately(view);
+}
+
+/// Prepares `view` for an off-screen layer capture: pending layout and
+/// display applied.
+#[cfg(target_os = "ios")]
+pub fn prepare_for_capture(view: &PlatformView) {
+    layout_immediately(view);
+    layout_layer_immediately(view);
+    display_immediately(view);
+}
+
+/// The scroll view `view` sits inside, when any — `AppKit`'s
+/// `enclosingScrollView`.
+#[must_use]
+#[cfg(target_os = "macos")]
+pub fn enclosing_scroll_view(view: &PlatformView) -> Option<Retained<objc2_app_kit::NSScrollView>> {
+    view.enclosingScrollView()
+}
+
+/// The image representation `view` prepares for `cache_display_in`.
+#[must_use]
+#[cfg(target_os = "macos")]
+pub fn bitmap_rep_for_caching_display(
+    view: &PlatformView,
+) -> Option<Retained<objc2_app_kit::NSBitmapImageRep>> {
+    view.bitmapImageRepForCachingDisplayInRect(view.bounds())
+}
+
+/// Draws `view`'s tree into its cached bitmap rep.
+#[cfg(target_os = "macos")]
+pub fn cache_display(view: &PlatformView, rep: &objc2_app_kit::NSBitmapImageRep) {
+    view.cacheDisplayInRect_toBitmapImageRep(view.bounds(), rep);
+}
+
+/// The display-scale factor `view`'s window renders at, `1.0` detached.
+#[must_use]
+pub fn backing_scale_factor(view: &PlatformView) -> f64 {
+    crate::view::window(view).map_or(1.0, |window| {
+        #[cfg(target_os = "macos")]
+        {
+            window.backingScaleFactor()
+        }
+        #[cfg(target_os = "ios")]
+        {
+            window.screen().scale()
+        }
+    })
 }
 
 /// Removes `view` and everything inside it from the accessibility tree.

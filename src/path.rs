@@ -14,6 +14,7 @@
 //! `CGPathAdd*` function.
 
 use objc2_core_foundation::CFRetained;
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
     CGAffineTransformMakeTranslation, CGAffineTransformScale, CGMutablePath, CGPath,
 };
@@ -640,5 +641,197 @@ mod tests {
         let bounds = bounds_of(&path);
         assert!((bounds.size.width - 200.0).abs() < 0.001);
         assert!((bounds.size.height - 100.0).abs() < 0.001);
+    }
+}
+
+/// A mutable Core Graphics path being assembled.
+#[derive(Debug)]
+pub struct PathBuilder {
+    path: CFRetained<CGMutablePath>,
+}
+
+impl PathBuilder {
+    /// An empty path.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            path: CGMutablePath::new(),
+        }
+    }
+
+    /// Starts a new subpath at `point`.
+    pub fn move_to(&mut self, point: Point) {
+        // SAFETY: `path` is a live mutable path; the transform is null.
+        unsafe {
+            CGMutablePath::move_to_point(Some(&self.path), std::ptr::null(), point.x, point.y);
+        }
+    }
+
+    /// Extends the subpath with a straight line to `point`.
+    pub fn line_to(&mut self, point: Point) {
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_line_to_point(Some(&self.path), std::ptr::null(), point.x, point.y);
+        }
+    }
+
+    /// A quadratic curve to `end` through `control`.
+    pub fn quad_to(&mut self, control: Point, end: Point) {
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_quad_curve_to_point(
+                Some(&self.path),
+                std::ptr::null(),
+                control.x,
+                control.y,
+                end.x,
+                end.y,
+            );
+        }
+    }
+
+    /// A cubic curve to `end` through `c1` and `c2`.
+    pub fn cubic_to(&mut self, c1: Point, c2: Point, end: Point) {
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_curve_to_point(
+                Some(&self.path),
+                std::ptr::null(),
+                c1.x,
+                c1.y,
+                c2.x,
+                c2.y,
+                end.x,
+                end.y,
+            );
+        }
+    }
+
+    /// The full rect `rect`.
+    pub fn rect(&mut self, rect: Rect) {
+        let rect = CGRect::new(
+            CGPoint::new(rect.origin.x, rect.origin.y),
+            CGSize::new(rect.size.width, rect.size.height),
+        );
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_rect(Some(&self.path), std::ptr::null(), rect);
+        }
+    }
+
+    /// The ellipse inscribed in `rect`.
+    pub fn ellipse_in_rect(&mut self, rect: Rect) {
+        let rect = CGRect::new(
+            CGPoint::new(rect.origin.x, rect.origin.y),
+            CGSize::new(rect.size.width, rect.size.height),
+        );
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_ellipse_in_rect(Some(&self.path), std::ptr::null(), rect);
+        }
+    }
+
+    /// A rect whose corners are quarter-ellipses of `radius`.
+    pub fn rounded_rect(&mut self, rect: Rect, radius: f64) {
+        let rect = CGRect::new(
+            CGPoint::new(rect.origin.x, rect.origin.y),
+            CGSize::new(rect.size.width, rect.size.height),
+        );
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_rounded_rect(
+                Some(&self.path),
+                std::ptr::null(),
+                rect,
+                radius,
+                radius,
+            );
+        }
+    }
+
+    /// A rect with per-corner radii, drawn as tangent arcs — the corners are
+    /// clamped to at most half the shorter side by the caller's radii.
+    ///
+    /// - `radii`: `(top_left, top_right, bottom_right, bottom_left)`.
+    pub fn uneven_rounded_rect(&mut self, rect: Rect, radii: (f64, f64, f64, f64)) {
+        let (tl, tr, br, bl) = radii;
+        let (min_x, min_y) = (rect.origin.x, rect.origin.y);
+        let (max_x, max_y) = (min_x + rect.size.width, min_y + rect.size.height);
+        self.move_to(Point::new(min_x + tl, min_y));
+        self.arc_to_point(Point::new(max_x, min_y), Point::new(max_x, max_y), tr);
+        self.arc_to_point(Point::new(max_x, max_y), Point::new(min_x, max_y), br);
+        self.arc_to_point(Point::new(min_x, max_y), Point::new(min_x, min_y), bl);
+        self.arc_to_point(Point::new(min_x, min_y), Point::new(max_x, min_y), tl);
+        self.close();
+    }
+
+    /// An arc from the current point: the tangent-line arc of `radius`
+    /// through `tangent_end` heading toward `tangent_end_2`.
+    pub fn arc_to_point(&mut self, tangent_end: Point, tangent_end_2: Point, radius: f64) {
+        // SAFETY: see `move_to`.
+        unsafe {
+            CGMutablePath::add_arc_to_point(
+                Some(&self.path),
+                std::ptr::null(),
+                tangent_end.x,
+                tangent_end.y,
+                tangent_end_2.x,
+                tangent_end_2.y,
+                radius,
+            );
+        }
+    }
+
+    /// An elliptical arc from `center` with radii `(rx, ry)` from `start`
+    /// through `sweep` radians; `sweep` near a full turn degenerates to the
+    /// whole ellipse.
+    pub fn arc(&mut self, center: Point, rx: f64, ry: f64, start: f64, sweep: f64) {
+        const NEARLY_FULL: f64 = std::f64::consts::TAU - 0.0001;
+        if sweep.abs() >= NEARLY_FULL {
+            self.ellipse_in_rect(Rect::new(center.x - rx, center.y - ry, rx * 2.0, ry * 2.0));
+            return;
+        }
+        // The arc commands are circular; the ellipse is a translate+scale of
+        // the unit circle about `center`.
+        let transform = CGAffineTransformMakeTranslation(center.x, center.y);
+        let transform = CGAffineTransformScale(transform, rx, ry);
+        // SAFETY: `path` is live; `transform` points to a valid affine.
+        unsafe {
+            CGMutablePath::add_arc(
+                Some(&self.path),
+                &raw const transform,
+                0.0,
+                0.0,
+                1.0,
+                start,
+                start + sweep,
+                sweep < 0.0,
+            );
+        }
+    }
+
+    /// Closes the current subpath.
+    pub fn close(&mut self) {
+        CGMutablePath::close_subpath(Some(&self.path));
+    }
+
+    /// The finished immutable path.
+    #[must_use]
+    /// # Panics
+    ///
+    /// When copying the live path fails — impossible for a valid path.
+    pub fn build(&self) -> CFRetained<CGPath> {
+        // SAFETY: copies a live path.
+        let copy =
+            CGMutablePath::new_copy(Some(&self.path)).expect("copying a valid path cannot fail");
+        // SAFETY: an immutable `CGPath` and its mutable copy are the same
+        // CoreGraphics object after this point — nothing mutates it.
+        unsafe { CFRetained::from_raw(CFRetained::into_raw(copy).cast::<CGPath>()) }
+    }
+}
+
+impl Default for PathBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

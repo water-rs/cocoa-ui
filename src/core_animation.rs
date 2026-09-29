@@ -16,6 +16,22 @@ pub fn flush_transaction() {
     CATransaction::flush();
 }
 
+/// Runs `body` inside a transaction with implicit actions disabled.
+///
+/// Layer property changes `body` makes — geometry, contents — apply
+/// atomically and instantly, which is what a content stream wants: frames
+/// from a GPU surface are already time-stamped, so animating their landing
+/// would smear them.
+pub fn without_animation(body: impl FnOnce()) {
+    CATransaction::begin();
+    // SAFETY: `setDisableActions:` is a plain property setter of the
+    // transaction's copy semantics; the class method exists on every
+    // supported release.
+    CATransaction::setDisableActions(true);
+    body();
+    CATransaction::commit();
+}
+
 /// Runs `body` when the current implicit transaction commits.
 ///
 /// Commit is the boundary after which a layer added this transaction is on

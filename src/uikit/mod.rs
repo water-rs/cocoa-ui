@@ -49,11 +49,13 @@ pub use context_menu::{
 pub mod colors;
 mod host_view;
 pub mod image;
+pub mod input_view;
 mod menu;
 mod navigation;
 pub use pointer::PointerInteraction;
 mod search_bar;
 mod split;
+pub mod surface_view;
 mod tabs;
 mod view_controller;
 mod window;

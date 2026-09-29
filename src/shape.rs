@@ -17,7 +17,7 @@
 use core::ptr;
 
 use objc2_core_foundation::{CFRetained, CGAffineTransform};
-use objc2_core_graphics::{CGMutablePath, CGPath};
+use objc2_core_graphics::{CGColor, CGMutablePath, CGPath};
 use objc2_quartz_core::{CALayer, CAShapeLayer};
 
 use crate::geometry::{Point, Rect};
@@ -240,5 +240,50 @@ pub fn set_mask(view: &PlatformView, mask: Option<&CALayer>) {
         // SAFETY: `layer` is a live `CALayer` backing a live view; `mask` is
         // a live layer or nil, both valid for the property.
         unsafe { layer.setMask(mask) };
+    }
+}
+/// A `CAShapeLayer` a view hosts as a sublayer — path, fill colour and
+/// frame written imperatively.
+/// A shape layer owned by its host view's layer tree.
+#[derive(Debug)]
+pub struct ShapeLayer {
+    layer: Retained<CAShapeLayer>,
+}
+
+impl ShapeLayer {
+    /// An empty shape layer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            layer: CAShapeLayer::new(),
+        }
+    }
+
+    /// The backing `CAShapeLayer`, for `addSublayer` and friends.
+    #[must_use]
+    pub fn layer(&self) -> Retained<CAShapeLayer> {
+        self.layer.clone()
+    }
+
+    /// The path the layer fills.
+    pub fn set_path(&self, path: Option<&CGPath>) {
+        self.layer.setPath(path);
+    }
+
+    /// The colour the layer fills its path with; `None` clears it.
+    pub fn set_fill_color(&self, color: Option<&CGColor>) {
+        self.layer.setFillColor(color);
+    }
+
+    /// The layer's frame — the host re-frames it on every layout pass.
+    pub fn set_frame(&self, frame: Rect) {
+        self.layer.setFrame(frame.into());
+    }
+}
+
+impl Default for ShapeLayer {
+    /// An empty layer, same as [`ShapeLayer::new`].
+    fn default() -> Self {
+        Self::new()
     }
 }
