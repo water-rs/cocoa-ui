@@ -35,8 +35,8 @@ use crate::action::ControlEvents;
 use crate::geometry::Size;
 use crate::picker::PickerStyle;
 
-/// The menu button's trailing chevron and its padding — `SwiftUI`'s menu
-/// picker chrome.
+/// The menu button's trailing chevron and its padding — the symbol the
+/// platform's own menu controls draw.
 const CHEVRON: &str = "chevron.up.chevron.down";
 const CHEVRON_PADDING: f64 = 4.0;
 
@@ -130,8 +130,8 @@ define_class!(
             if let Some(title) = shared.titles.get(row.cast_unsigned()) {
                 label.setText(Some(&NSString::from_str(title)));
             }
-            // A wheel row always draws at 21pt — the applied font is
-            // resized, as `WuiPicker`'s `platformFont.withSize(21)` did.
+            // A wheel row always draws at 21pt — the picker's own row
+            // size — so the applied font is resized to it.
             let font = shared
                 .font
                 .as_ref()

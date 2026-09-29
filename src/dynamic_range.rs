@@ -3,7 +3,7 @@
 //! A dynamic-range choice can be attached to a view or layer, applied to a
 //! layer subtree, or resolved from the nearest tagged ancestor and the
 //! display's EDR capability. The association key intentionally uses the
-//! existing `dev.waterui.dynamicRangeMode` selector string so tags written
+//! existing `dev.cocoaui.dynamicRangeMode` selector string so tags written
 //! here and tags written by the platform-side compatibility layer share one
 //! storage location.
 //!
@@ -43,7 +43,7 @@ impl DynamicRange {
 fn association_key() -> *const c_void {
     // The selector string is the storage key used by the platform-side
     // compatibility layer; registering the same string yields the same key.
-    let selector = Sel::register(c"dev.waterui.dynamicRangeMode");
+    let selector = Sel::register(c"dev.cocoaui.dynamicRangeMode");
     // SAFETY: `Sel` is `repr(transparent)` over the selector pointer the
     // associated-object API expects as the key.
     unsafe { core::mem::transmute::<Sel, *const c_void>(selector) }

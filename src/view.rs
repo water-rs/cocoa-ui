@@ -646,8 +646,8 @@ pub fn pin_edges(
     NSLayoutConstraint::activateConstraints(&constraints, mtm);
 }
 
-/// Applies the content-declared label and value — `WuiGpuSurface`'s
-/// `publishContentAccessibility`: the label channel controls whether the
+/// Applies the content-declared label and value — the label channel
+/// controls whether the
 /// view is an accessibility element; a value only ever marks it.
 #[cfg(target_os = "macos")]
 pub fn set_accessibility_content(view: &PlatformView, label: Option<&str>, value: Option<&str>) {
@@ -670,7 +670,7 @@ pub fn set_accessibility_content(view: &PlatformView, label: Option<&str>, value
 
 /// Applies the content-declared label and value.
 ///
-/// `WuiGpuSurface`'s `publishContentAccessibility`: the label channel
+/// The label channel
 /// controls whether the view is an accessibility element; a value only ever
 /// marks it.
 ///

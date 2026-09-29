@@ -58,20 +58,22 @@ impl Progress {
     }
 
     /// Switches between the bar and the spinning style.
-    ///
-    /// The spinning style is drawn at the small control size — the spinner
-    /// `SwiftUI` uses on macOS.
     pub fn set_variant(&self, variant: ProgressVariant) {
         match variant {
-            ProgressVariant::Linear => {
-                self.setStyle(NSProgressIndicatorStyle::Bar);
-                self.setControlSize(NSControlSize::Regular);
-            }
-            ProgressVariant::Circular => {
-                self.setStyle(NSProgressIndicatorStyle::Spinning);
-                self.setControlSize(NSControlSize::Small);
-            }
+            ProgressVariant::Linear => self.setStyle(NSProgressIndicatorStyle::Bar),
+            ProgressVariant::Circular => self.setStyle(NSProgressIndicatorStyle::Spinning),
         }
+    }
+
+    /// How large the control is drawn — `NSControl.controlSize`.
+    pub fn set_control_size(&self, size: crate::slider::ControlSize) {
+        let size = match size {
+            crate::slider::ControlSize::Mini => NSControlSize::Mini,
+            crate::slider::ControlSize::Small => NSControlSize::Small,
+            crate::slider::ControlSize::Regular => NSControlSize::Regular,
+            crate::slider::ControlSize::Large => NSControlSize::Large,
+        };
+        self.setControlSize(size);
     }
 
     /// The value the indicator reports.

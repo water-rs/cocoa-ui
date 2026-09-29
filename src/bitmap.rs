@@ -394,7 +394,7 @@ pub fn view_template_image(
     template_image(&image, scale / shrink)
 }
 
-/// Any connected `UIWindowScene` — `WuiCaptureDisplay`'s `requireCaptureDisplay`:
+/// Any connected `UIWindowScene`:
 /// capture windows must attach to a real scene, and any connected one works.
 #[cfg(target_os = "ios")]
 #[must_use]

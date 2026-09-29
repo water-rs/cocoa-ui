@@ -1,8 +1,7 @@
 //! The `AppKit` text field: an `NSTextField` driving single-line text input.
 //!
 //! The control draws the native rounded bezel — platform fill, hairline
-//! border, and focus ring — which is what `SwiftUI`'s default `TextField`
-//! renders on macOS. The field is its own `NSTextFieldDelegate`: user edits
+//! border, and focus ring. The field is its own `NSTextFieldDelegate`: user edits
 //! surface through `on_change` (`controlTextDidChange`) and Return through
 //! `on_submit` (`doCommandBySelector:`), and the handlers live on the
 //! class's ivars rather than on a target-action pair because editing
@@ -117,8 +116,8 @@ define_class!(
 );
 
 impl TextField {
-    /// An editable, selectable, enabled field drawing the rounded bezel —
-    /// `SwiftUI`'s default `TextField` chrome on macOS — with `line_limit`
+    /// An editable, selectable, enabled field drawing the platform's
+    /// rounded bezel, with `line_limit`
     /// applied (`Some(1)` is the single-line mode, `None` unlimited).
     #[must_use]
     pub fn new(mtm: MainThreadMarker, line_limit: Option<usize>) -> Retained<Self> {
@@ -139,9 +138,8 @@ impl TextField {
         this
     }
 
-    /// Applies `line_limit` the way `WuiTextField.configureTextInput` does:
-    /// a single-line field scrolls inside its one line and never wraps; an
-    /// unlimited field wraps without a cap.
+    /// Applies `line_limit`: a single-line field scrolls inside its one
+    /// line and never wraps; an unlimited field wraps without a cap.
     pub fn set_line_limit(&self, line_limit: Option<usize>) {
         let single = line_limit == Some(1);
         self.setUsesSingleLineMode(single);
@@ -157,7 +155,7 @@ impl TextField {
     }
 
     /// The text the field currently holds — during editing, the field
-    /// editor's in-flight string, exactly `WuiTextField.editingString`.
+    /// editor's in-flight string.
     #[must_use]
     pub fn string(&self) -> String {
         if let Some(editor) = self.currentEditor() {
@@ -189,7 +187,7 @@ impl TextField {
     }
 
     /// The control's intrinsic height — the text share of a measure, as
-    /// `WuiTextField` reads `intrinsicContentSize` on `AppKit`.
+    /// `NSTextField.intrinsicContentSize`.
     #[must_use]
     pub fn measured_height(&self) -> f64 {
         self.intrinsicContentSize().height

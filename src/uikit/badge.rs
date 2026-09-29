@@ -38,15 +38,6 @@ use objc2_ui_kit::{
 use crate::font;
 use crate::geometry::Size;
 
-/// The dot diameter a zero count draws.
-const DOT_SIZE: f64 = 6.0;
-/// The capsule's fixed height; the width grows with the count.
-const CAPSULE_HEIGHT: f64 = 16.0;
-/// The capsule's horizontal inset around the count text.
-const CAPSULE_HORIZONTAL_PADDING: f64 = 4.0;
-/// The count label's point size, drawn in the medium system face.
-const CAPSULE_FONT_SIZE: f64 = 11.0;
-
 /// A [`BadgeView`]'s state: the count and the two paints it draws with.
 pub struct BadgeViewIvars {
     /// The count; `0` draws the bare dot.
@@ -55,6 +46,8 @@ pub struct BadgeViewIvars {
     fill_color: RefCell<Retained<UIColor>>,
     /// The count label's color.
     label_color: RefCell<Retained<UIColor>>,
+    /// The geometry the indicator draws at.
+    metrics: crate::badge::BadgeMetrics,
 }
 
 impl fmt::Debug for BadgeViewIvars {
@@ -63,6 +56,7 @@ impl fmt::Debug for BadgeViewIvars {
             .field("value", &self.value.get())
             .field("fill_color", &self.fill_color.borrow())
             .field("label_color", &self.label_color.borrow())
+            .field("metrics", &self.metrics)
             .finish()
     }
 }
@@ -85,7 +79,7 @@ impl BadgeViewIvars {
     fn text_attributes(&self, mtm: MainThreadMarker) -> Retained<TextAttributes> {
         text_attributes(
             &self.label_color.borrow(),
-            &font::system(mtm, CAPSULE_FONT_SIZE, font::weight::MEDIUM),
+            &font::system(mtm, self.metrics.capsule_font_size, font::weight::MEDIUM),
         )
     }
 
@@ -172,13 +166,15 @@ define_class!(
 );
 
 impl BadgeView {
-    /// A badge indicator painting `systemRed` under a white count.
+    /// A badge indicator painting `systemRed` under a white count, drawing
+    /// at `metrics`.
     #[must_use]
-    pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
+    pub fn new(mtm: MainThreadMarker, metrics: crate::badge::BadgeMetrics) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(BadgeViewIvars {
             value: Cell::new(0),
             fill_color: RefCell::new(UIColor::systemRedColor()),
             label_color: RefCell::new(UIColor::whiteColor()),
+            metrics,
         });
         // SAFETY: `initWithFrame:` is `UIView`'s designated initializer.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] };
@@ -222,12 +218,15 @@ impl BadgeView {
     /// count text plus padding (never narrower than it is tall).
     #[must_use]
     pub fn intrinsic_size(&self) -> Size {
+        let metrics = self.ivars().metrics;
         if self.ivars().value.get() == 0 {
-            return Size::new(DOT_SIZE, DOT_SIZE);
+            return Size::new(metrics.dot_size, metrics.dot_size);
         }
         let text = self.ivars().text_size(MainThreadMarker::from(self));
-        let width = CAPSULE_HORIZONTAL_PADDING.mul_add(2.0, text.width.ceil());
-        Size::new(width.max(CAPSULE_HEIGHT), CAPSULE_HEIGHT)
+        let width = metrics
+            .capsule_horizontal_padding
+            .mul_add(2.0, text.width.ceil());
+        Size::new(width.max(metrics.capsule_height), metrics.capsule_height)
     }
 
     /// The inset from the content's trailing edge to the indicator's
@@ -236,9 +235,9 @@ impl BadgeView {
     #[must_use]
     pub fn horizontal_offset(&self) -> f64 {
         if self.ivars().value.get() == 0 {
-            DOT_SIZE
+            self.ivars().metrics.dot_size
         } else {
-            12.0
+            self.ivars().metrics.count_horizontal_offset
         }
     }
 
@@ -247,9 +246,9 @@ impl BadgeView {
     #[must_use]
     pub fn vertical_offset(&self) -> f64 {
         if self.ivars().value.get() == 0 {
-            DOT_SIZE
+            self.ivars().metrics.dot_size
         } else {
-            14.0
+            self.ivars().metrics.count_vertical_offset
         }
     }
 

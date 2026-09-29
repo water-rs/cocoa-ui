@@ -1466,7 +1466,7 @@ fn script_result(result: *mut AnyObject, error: *mut NSError) -> Result<String, 
 }
 
 /// JSON-serializes `object`, falling back to `description` when it is not a
-/// valid JSON object — mirrors `WuiWebView`'s `evaluateJavaScript` reply.
+/// valid JSON object — the shape `evaluateJavaScript` replies with.
 fn json_string(object: &AnyObject) -> String {
     // SAFETY: `object` is a live object.
     if unsafe { NSJSONSerialization::isValidJSONObject(object) } {

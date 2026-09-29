@@ -173,7 +173,7 @@ impl ImageView {
     }
 
     /// The view's `accessibilityLabel`; an empty label also clears
-    /// `isAccessibilityElement` — `WuiPictureView`'s conditional pair.
+    /// `isAccessibilityElement` — the conditional pair.
     pub fn set_accessibility_label(&self, label: Option<&str>) {
         self.setAccessibilityElement(label.is_some());
         self.setAccessibilityLabel(label.map(NSString::from_str).as_deref());
@@ -217,8 +217,7 @@ pub fn symbol_image(name: &str) -> Option<Retained<NSImage>> {
 }
 
 /// The first [`ImageView`] holding a named system symbol in `view`'s
-/// subtree, depth-first — the icon chrome reads when a label's own content
-/// is a platform symbol (`firstSystemIcon` in the Swift host).
+/// subtree, depth-first.
 #[must_use]
 pub fn first_symbol_view(view: &objc2_app_kit::NSView) -> Option<Retained<ImageView>> {
     if let Some(image) = view.downcast_ref::<ImageView>()

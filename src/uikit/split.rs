@@ -1,5 +1,5 @@
 //! The `UIKit` split view: a `UISplitViewController` of sidebar and detail
-//! columns, matching `WuiNavigationSplitView` semantics on iOS.
+//! columns.
 //!
 //! The controller shows `sidebar` and `detail` columns (a supplementary
 //! column joins them for triple-column style). Collapsed-column reports

@@ -24,10 +24,6 @@ use objc2_ui_kit::{
 use crate::geometry::Size;
 use crate::progress::ProgressVariant;
 
-/// The fallback bar width a measure reports: `UIProgressView` has no
-/// intrinsic width of its own.
-const BAR_WIDTH: f64 = 100.0;
-
 /// A progress indicator in a `UIView` container.
 ///
 /// The container is what the leaf mounts and lays out; the indicators are
@@ -89,8 +85,8 @@ impl Progress {
     }
 
     /// Whether the indicator animates instead of reporting a value — an
-    /// indeterminate linear reading draws the spinner, as `WuiProgress`
-    /// projected it.
+    /// indeterminate linear reading draws the spinner — `UIKit` has no
+    /// indeterminate bar.
     pub fn set_indeterminate(&self, indeterminate: bool) {
         self.indeterminate.set(indeterminate);
         self.update_indicators();
@@ -114,12 +110,13 @@ impl Progress {
         self.bar.setTrackTintColor(Some(color));
     }
 
-    /// The indicator's intrinsic size — what a measure pass reports. The
-    /// bar has no intrinsic width, so the reported width is the fallback.
+    /// The indicator's intrinsic size — what a measure pass reports.
+    /// `UIProgressView` has no intrinsic width of its own, so a linear
+    /// indicator reports a zero width for its owner to floor.
     #[must_use]
     pub fn intrinsic_size(&self) -> Size {
         match self.variant.get() {
-            ProgressVariant::Linear => Size::new(BAR_WIDTH, self.bar.intrinsicContentSize().height),
+            ProgressVariant::Linear => Size::new(0.0, self.bar.intrinsicContentSize().height),
             ProgressVariant::Circular => self.spinner.intrinsicContentSize().into(),
         }
     }

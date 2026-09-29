@@ -59,8 +59,8 @@ pub fn main_screen_scale() -> f64 {
     objc2_ui_kit::UIScreen::mainScreen(objc2::MainThreadMarker::new().expect("main thread")).scale()
 }
 
-/// Whether the application is in the active state — `WuiGpuSurface`'s
-/// `UIApplication.shared.applicationState == .active` gate.
+/// Whether the application is in the active state —
+/// `UIApplication.shared.applicationState == .active`.
 #[must_use]
 /// # Panics
 ///

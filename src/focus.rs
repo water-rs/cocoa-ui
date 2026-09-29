@@ -301,7 +301,7 @@ pub fn install(mtm: MainThreadMarker, view: &PlatformView) -> FocusTarget {
 }
 
 /// Every live focus anchor in `root`'s subtree, in traversal order —
-/// `WuiFocusTarget`'s `wuiFocusTargets` walk.
+/// the first-responder walk a focus search performs.
 #[must_use]
 pub fn targets_in(root: &PlatformView) -> Vec<FocusTarget> {
     let mut found = Vec::new();
