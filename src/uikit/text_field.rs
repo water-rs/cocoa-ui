@@ -14,13 +14,15 @@
 
 use std::fmt;
 
+use objc2::ffi;
 use objc2::rc::{Retained, Weak};
-use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::runtime::{AnyObject, Sel};
+use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_core_foundation::{CGFloat, CGRect, CGSize};
 use objc2_foundation::{NSAttributedString, NSObjectProtocol};
 use objc2_ui_kit::{
     NSTextAlignment, UIKeyboardType, UITextAutocapitalizationType, UITextAutocorrectionType,
-    UITextBorderStyle, UITextContentTypePassword, UITextField, UITextInputTraits,
+    UITextBorderStyle, UITextContentTypePassword, UITextField,
 };
 
 use crate::ActionTarget;
@@ -114,7 +116,11 @@ impl TextField {
 
     /// The on-screen keyboard the field requests while editing.
     pub fn set_keyboard(&self, keyboard: Keyboard) {
-        self.setKeyboardType(keyboard.native());
+        // SAFETY: `setKeyboardType:` is a `UITextInputTraits` setter on
+        // `UITextField` — see `send_trait_setter`.
+        unsafe {
+            send_trait_setter(self, sel!(setKeyboardType:), keyboard.native());
+        }
     }
 
     /// How the field aligns its text — prompt alignment applies to both the
@@ -165,6 +171,37 @@ impl TextField {
     }
 }
 
+/// Sends a `UITextInputTraits` property setter through a raw
+/// `objc_msgSend`.
+///
+/// `UIKit` resolves those accessors dynamically — on iOS 26 they never
+/// enter `UITextField`'s method list, so the `class_getInstanceMethod`
+/// lookup in `objc2`'s debug message-send verification reports
+/// `method not found` on a call `UIKit` answers. A raw send performs the
+/// same message without the check.
+///
+/// # Safety
+/// `sel` must name a `UITextInputTraits` property setter that `field`'s
+/// class dynamically resolves, taking one argument of type `A` and
+/// returning void.
+unsafe fn send_trait_setter<A>(field: &UITextField, sel: Sel, arg: A) {
+    // SAFETY: `objc_msgSend` is the ABI entry point every `msg_send!`
+    // resolves to; the caller pins the signature to `sel`'s declaration.
+    let msg: unsafe extern "C-unwind" fn(*mut AnyObject, Sel, A) =
+        unsafe { std::mem::transmute(ffi::objc_msgSend as *const ()) };
+    // SAFETY: upheld by the function's safety contract — `sel` is a
+    // setter `field` resolves dynamically and `arg` matches its type.
+    unsafe {
+        msg(
+            std::ptr::from_ref::<UITextField>(field)
+                .cast::<AnyObject>()
+                .cast_mut(),
+            sel,
+            arg,
+        );
+    }
+}
+
 /// The field's intrinsic size as a kit [`Size`], for measures that report
 /// the control's share of a layout pass.
 #[must_use]
@@ -198,12 +235,27 @@ impl SecureField {
         // SAFETY: `initWithFrame:` is the inherited designated initializer.
         let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] };
         this.setBorderStyle(UITextBorderStyle::RoundedRect);
-        this.setSecureTextEntry(true);
-        // SAFETY: `UITextContentTypePassword` is a framework static —
-        // immutable, so reading it cannot alias.
-        this.setTextContentType(Some(unsafe { UITextContentTypePassword }));
-        this.setAutocorrectionType(UITextAutocorrectionType::No);
-        this.setAutocapitalizationType(UITextAutocapitalizationType::None);
+        // SAFETY: every call below is a `UITextInputTraits` setter on
+        // `UITextField` — see `send_trait_setter`. `UITextContentTypePassword`
+        // is a framework static, so reading it cannot alias.
+        unsafe {
+            send_trait_setter(&this, sel!(setSecureTextEntry:), true);
+            send_trait_setter(
+                &this,
+                sel!(setTextContentType:),
+                Some(UITextContentTypePassword),
+            );
+            send_trait_setter(
+                &this,
+                sel!(setAutocorrectionType:),
+                UITextAutocorrectionType::No,
+            );
+            send_trait_setter(
+                &this,
+                sel!(setAutocapitalizationType:),
+                UITextAutocapitalizationType::None,
+            );
+        }
         this
     }
 
