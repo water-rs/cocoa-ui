@@ -164,16 +164,6 @@ mod uikit_map_view {
 #[cfg(target_os = "ios")]
 use uikit_map_view::MKMapView;
 
-// `MKMapView` and the other `MK*` classes resolve through `objc_getClass`
-// at runtime, which the linker cannot see: with no link-time reference to
-// a `MapKit` symbol `ld` drops the framework as unused and every class
-// lookup fails at launch. Anchoring one class symbol keeps `MapKit` in the
-// load commands on both platforms.
-unsafe extern "C" {
-    #[link_name = "OBJC_CLASS_$_MKMapView"]
-    static MAP_KIT_VIEW_CLASS: AnyObject;
-}
-
 /// A geographic coordinate: latitude and longitude in degrees.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Coordinate {
@@ -545,9 +535,6 @@ impl MapView {
     /// An empty map view.
     #[must_use]
     pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        // SAFETY: reading the anchor's address binds `MapKit`'s class
-        // symbol so the framework stays in the load commands.
-        std::hint::black_box(unsafe { &MAP_KIT_VIEW_CLASS });
         let this = Self::alloc(mtm).set_ivars(MapViewIvars {
             delegate: RefCell::new(None),
             location_marker: RefCell::new(None),
