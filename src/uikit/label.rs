@@ -28,6 +28,8 @@ pub struct LabelIvars {
     source_text: RefCell<Option<Retained<NSAttributedString>>>,
     /// Maximum visible lines; `0` wraps unbounded.
     line_limit: Cell<usize>,
+    /// The alignment last requested through `set_text_alignment`.
+    text_alignment: Cell<NSTextAlignment>,
     /// `bounds.width` as of the last `layoutSubviews` propagation.
     reported_width: Cell<f64>,
 }
@@ -37,6 +39,7 @@ impl fmt::Debug for LabelIvars {
         f.debug_struct("LabelIvars")
             .field("source_text", &self.source_text.borrow().is_some())
             .field("line_limit", &self.line_limit.get())
+            .field("text_alignment", &self.text_alignment.get())
             .field("reported_width", &self.reported_width.get())
             .finish()
     }
@@ -100,6 +103,7 @@ impl Label {
         let this = Self::alloc(mtm).set_ivars(LabelIvars {
             source_text: RefCell::new(None),
             line_limit: Cell::new(0),
+            text_alignment: Cell::new(NSTextAlignment::Natural),
             reported_width: Cell::new(0.0),
         });
         // SAFETY: `initWithFrame:` is `UILabel`'s designated initializer.
@@ -113,6 +117,13 @@ impl Label {
     pub fn set_attributed_text(&self, text: &NSAttributedString) {
         self.ivars().source_text.replace(Some(text.into()));
         self.setAttributedText(Some(text));
+        // `setAttributedText` re-derives `lineBreakMode` and `textAlignment`
+        // from the paragraph style inside the attributed string (word wrap,
+        // natural alignment), clobbering what `set_line_limit` and
+        // `set_text_alignment` configured — reapply them so the label's own
+        // settings win regardless of call order.
+        self.apply_line_limit();
+        self.setTextAlignment(self.ivars().text_alignment.get());
         self.invalidate_layout();
     }
 
@@ -128,6 +139,13 @@ impl Label {
     /// Truncation happens on the last visible line's tail.
     pub fn set_line_limit(&self, limit: usize) {
         self.ivars().line_limit.set(limit);
+        self.apply_line_limit();
+        self.invalidate_layout();
+    }
+
+    /// Applies `line_limit` to `numberOfLines` and `lineBreakMode`.
+    fn apply_line_limit(&self) {
+        let limit = self.ivars().line_limit.get();
         if limit == 0 {
             self.setNumberOfLines(0);
             self.setLineBreakMode(NSLineBreakMode::ByWordWrapping);
@@ -135,11 +153,11 @@ impl Label {
             self.setNumberOfLines(limit.cast_signed());
             self.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
         }
-        self.invalidate_layout();
     }
 
     /// How the text aligns within the label's width.
     pub fn set_text_alignment(&self, alignment: NSTextAlignment) {
+        self.ivars().text_alignment.set(alignment);
         self.setTextAlignment(alignment);
         self.invalidate_layout();
     }
