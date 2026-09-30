@@ -1630,8 +1630,15 @@ mod platform {
                 let Some(current) = responder else {
                     panic!("video player was attached outside a UIViewController hierarchy");
                 };
+                // A view controller's own view answers its controller as the
+                // next responder, so the walk reaches `controller` itself
+                // first; skipping it keeps containment aimed at the
+                // enclosing hierarchy — `UIKit` raises when a controller is
+                // added as its own child.
+                let is_self = Retained::as_ptr(&current).cast::<AnyObject>()
+                    == Retained::as_ptr(&self.controller);
                 // SAFETY: `isKindOfClass:` on a live responder.
-                if current.isKindOfClass(UIViewController::class()) {
+                if current.isKindOfClass(UIViewController::class()) && !is_self {
                     break current
                         .downcast::<UIViewController>()
                         .expect("isKindOfClass checked above");
