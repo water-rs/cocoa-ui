@@ -90,9 +90,9 @@ pub use scroll::ScrollView;
 mod stepper;
 pub use menu::{elements, menu, menu_with_identifier};
 pub use navigation::{
-    BarButton, LargeTitle, NavBar, NavContentController, NavPage, NavSearch, NavigationController,
-    SearchBarPlacement, SearchUpdater, bar_item, bar_item_accessibility_label, first_button,
-    first_control, image_bar_item,
+    BarButton, LargeTitle, NavBar, NavContentController, NavPage, NavSearch, NavSearchBar,
+    NavigationController, SearchBarMetrics, SearchBarPlacement, SearchUpdater, bar_item,
+    bar_item_accessibility_label, first_button, first_control, image_bar_item,
 };
 pub use search_bar::SearchBar;
 pub use split::{ColumnWidth, SplitColumnController, SplitController};
