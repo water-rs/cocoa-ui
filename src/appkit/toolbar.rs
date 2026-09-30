@@ -931,7 +931,9 @@ impl WindowToolbar {
         action: &ToolbarChild,
     ) -> Retained<NSToolbarItem> {
         let Some(icon) = &action.icon else {
-            return self.hosting_item(identifier, &action.view.view, Some(action.view.size));
+            let item = self.hosting_item(identifier, &action.view.view, Some(action.view.size));
+            item.setBordered(action.bordered);
+            return item;
         };
         let item =
             NSToolbarItem::initWithItemIdentifier(MainThreadMarker::from(self).alloc(), identifier);
