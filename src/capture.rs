@@ -942,13 +942,47 @@ impl ViewCapture {
     ) {
         let mtm = objc2::MainThreadMarker::new().expect("capture runs on the main thread");
         let (preparation, fence, specs) = self.prepare(target);
+        let completion = Mutex::new(Some(Box::new(completion) as Box<dyn Fn(bool) + Send>));
+
+        if specs.is_empty() {
+            // No external surfaces to compose: the handler only runs the
+            // completion on the main queue. It must not own anything that
+            // ever hops back to the main thread — Metal releases the block
+            // on its own completion queue, and `MainThreadBound`'s drop
+            // dispatches *synchronously* to the main queue. With the main
+            // thread blocked on the GPU submission this completion answers
+            // (it holds the device lock the submission needs), that turns
+            // capture into a three-thread deadlock.
+            let handler = RcBlock::new(
+                move |buffer: std::ptr::NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                    // SAFETY: the handler's buffer is alive for the call.
+                    let buffer = unsafe { buffer.as_ref() };
+                    assert!(
+                        buffer.status() == MTLCommandBufferStatus::Completed,
+                        "native Metal capture failed: {:?}",
+                        buffer.error()
+                    );
+                    let completion = completion.lock().expect("capture lock").take();
+                    if let Some(completion) = completion {
+                        enqueue(move |_mtm| {
+                            completion(true);
+                        });
+                    }
+                },
+            );
+            // SAFETY: Metal copies the block for the buffer's lifetime.
+            unsafe {
+                fence.addCompletedHandler(RcBlock::as_ptr(&handler));
+            }
+            fence.commit();
+            return;
+        }
 
         // Everything leaving the main thread is `Send`: the specs are Copy,
         // the compositor is shareable, `completion` is Send — and `this`
         // rides a `MainThreadBound`, only ever upgraded on the main queue.
         let compositor = self.compositor.clone();
         let this = Mutex::new(Some(MainThreadBound::new(Rc::downgrade(self), mtm)));
-        let completion = Mutex::new(Some(Box::new(completion) as Box<dyn Fn(bool) + Send>));
         let preparation = Mutex::new(Some(QueueSend(preparation)));
         let specs = Mutex::new(Some(specs));
 
@@ -966,15 +1000,6 @@ impl ViewCapture {
                     .expect("capture lock")
                     .take()
                     .expect("native capture fires once");
-                if specs.is_empty() {
-                    let completion = completion.lock().expect("capture lock").take();
-                    if let Some(completion) = completion {
-                        enqueue(move |_mtm| {
-                            completion(true);
-                        });
-                    }
-                    return;
-                }
                 let this = this.lock().expect("capture lock").take();
                 let completion = completion.lock().expect("capture lock").take();
                 let preparation = preparation.lock().expect("capture lock").take();
