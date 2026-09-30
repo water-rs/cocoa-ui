@@ -44,7 +44,9 @@ pub enum Column {
 /// The per-column preferred width range.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ColumnWidth {
-    /// The width the column settles at.
+    /// The content extent the column settles at: the divider is placed at
+    /// this width plus whatever insets the pane applies around the item's
+    /// view (the sidebar's concentric-glass margin).
     pub preferred: Option<f64>,
     /// The narrowest the column may be.
     pub minimum: Option<f64>,
@@ -318,14 +320,36 @@ impl SplitViewController {
         }
         let widths = self.ivars().preferred_widths.borrow().clone();
         let split_view = self.splitView();
+        let arranged = split_view.arrangedSubviews();
+        let items = self.splitViewItems();
         for (index, width) in widths.iter().enumerate() {
             let Some(preferred) = width.preferred else {
                 continue;
             };
-            if index >= split_view.arrangedSubviews().count().saturating_sub(1) {
+            if index >= arranged.count().saturating_sub(1) {
                 break;
             }
-            split_view.setPosition_ofDividerAtIndex(preferred, index.cast_signed());
+            // A preferred width declares the column's content extent. The
+            // platform can inset the item's view inside its pane — the
+            // sidebar's concentric-glass margin — so the divider lands at
+            // the content width plus the insets the pane itself reports.
+            let position = if index < items.count() {
+                let content = items
+                    .objectAtIndex(index)
+                    .viewController(MainThreadMarker::from(self))
+                    .view();
+                let pane = arranged.objectAtIndex(index);
+                let in_pane =
+                    crate::view::convert_rect(&content, crate::view::bounds(&content), Some(&pane));
+                if in_pane.size.width <= 0.0 {
+                    preferred
+                } else {
+                    preferred + pane.frame().size.width - in_pane.size.width
+                }
+            } else {
+                preferred
+            };
+            split_view.setPosition_ofDividerAtIndex(position, index.cast_signed());
         }
     }
 
