@@ -658,7 +658,8 @@ impl WindowToolbar {
         while !toolbar.items().is_empty() {
             toolbar.removeItemAtIndex((toolbar.items().count() - 1).cast_signed());
         }
-        for (index, identifier) in self.current_identifiers().iter().enumerate() {
+        let identifiers = self.current_identifiers();
+        for (index, identifier) in identifiers.iter().enumerate() {
             toolbar.insertItemWithItemIdentifier_atIndex(identifier, index.cast_signed());
         }
         let centered = self.centered_identifiers();

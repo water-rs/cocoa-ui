@@ -669,6 +669,13 @@ impl HostView {
         self.ivars().hidden.replace(Some(Rc::new(handler)));
     }
 
+    /// Whether a hidden handler is registered — a container walking a pane's
+    /// subtree flips only the views that asked for the notification.
+    #[must_use]
+    pub fn wants_hidden_events(&self) -> bool {
+        self.ivars().hidden.borrow().is_some()
+    }
+
     /// Calls `handler` on `mouseDown`, replacing any handler set before.
     /// Without a handler the event goes to `NSView`'s implementation.
     pub fn set_mouse_down_handler(&self, handler: impl Fn(&Self, &NSEvent) + 'static) {

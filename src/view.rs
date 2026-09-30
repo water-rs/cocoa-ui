@@ -290,6 +290,26 @@ pub fn is_hidden(view: &PlatformView) -> bool {
     view.isHidden()
 }
 
+/// Whether `view` or any ancestor is hidden — `isHiddenOrHasHiddenAncestor`.
+#[must_use]
+pub fn is_hidden_in_hierarchy(view: &PlatformView) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        view.isHiddenOrHasHiddenAncestor()
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let mut current: Option<Retained<PlatformView>> = Some(Retained::from(view));
+        while let Some(candidate) = current {
+            if candidate.isHidden() {
+                return true;
+            }
+            current = candidate.superview();
+        }
+        false
+    }
+}
+
 /// `view`'s opacity (`alphaValue`/`alpha`).
 #[must_use]
 pub fn alpha(view: &PlatformView) -> f64 {
