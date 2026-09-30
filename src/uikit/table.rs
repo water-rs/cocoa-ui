@@ -502,6 +502,13 @@ impl TableView {
         self.window().is_some()
     }
 
+    /// `sectionHeaderTopPadding` (iOS 15+): the padding between the
+    /// adjusted top inset and the first section's header. `0` removes the
+    /// `.insetGrouped` stock reserve above the first card.
+    pub fn set_section_header_top_padding(&self, padding: f64) {
+        self.setSectionHeaderTopPadding(padding);
+    }
+
     /// Enters or leaves editing mode.
     pub fn set_editing(&self, editing: bool, animated: bool) {
         self.setEditing_animated(editing, animated);
