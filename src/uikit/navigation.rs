@@ -26,15 +26,13 @@ use std::rc::Rc;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_foundation::{NSArray, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
-    UIBarButtonItem, UIBarButtonItemStyle, UIButton, UIColor, UIControl, UIGestureRecognizer,
+    UIBarButtonItem, UIBarButtonItemStyle, UIButton, UIControl, UIGestureRecognizer,
     UIGestureRecognizerDelegate, UINavigationBar, UINavigationController,
     UINavigationControllerDelegate, UINavigationItem, UINavigationItemLargeTitleDisplayMode,
-    UIReturnKeyType, UISearchController, UISearchResultsUpdating, UITextField, UITextFieldDelegate,
-    UIViewAutoresizing, UIViewController,
+    UISearchController, UISearchResultsUpdating, UIViewController,
 };
 
 /// `viewWillAppear:` listener, called with `UIKit`'s `animated` flag.
@@ -54,13 +52,6 @@ pub struct NavContentControllerIvars {
     search_updater: RefCell<Option<Retained<SearchUpdater>>>,
     /// The page's search drawer, retained for later updates.
     search_controller: RefCell<Option<Retained<UISearchController>>>,
-    /// The mounted `NavSearchBar`, when the page asked for one — prompt
-    /// updates route to its editing placeholder instead of the resting
-    /// field.
-    capsule_bar: RefCell<Option<Retained<NavSearchBar>>>,
-    /// How much of `additionalSafeAreaInsets.top` the capsule applied —
-    /// restored when the capsule unmounts.
-    capsule_inset: Cell<f64>,
 }
 
 impl fmt::Debug for NavContentControllerIvars {
@@ -90,20 +81,10 @@ define_class!(
         fn view_will_appear(&self, animated: bool) {
             // SAFETY: see the module safety note.
             let _: () = unsafe { msg_send![super(self), viewWillAppear: animated] };
-            self.mount_capsule();
             let handler = self.ivars().will_appear.borrow().clone();
             if let Some(handler) = handler {
                 handler(animated);
             }
-        }
-
-        // SAFETY: overriding `viewDidLayoutSubviews` carries no
-        // obligations.
-        #[unsafe(method(viewDidLayoutSubviews))]
-        fn view_did_layout_subviews(&self) {
-            // SAFETY: see the module safety note.
-            let _: () = unsafe { msg_send![super(self), viewDidLayoutSubviews] };
-            self.mount_capsule();
         }
 
         // SAFETY: overriding `viewDidAppear:` carries no obligations.
@@ -122,11 +103,6 @@ define_class!(
         fn view_did_disappear(&self, animated: bool) {
             // SAFETY: see the module safety note.
             let _: () = unsafe { msg_send![super(self), viewDidDisappear: animated] };
-            // The capsule rides the shared navigation bar — while another
-            // page is topmost it has no business staying mounted.
-            if let Some(bar) = self.ivars().capsule_bar.borrow().as_ref() {
-                bar.removeFromSuperview();
-            }
             let handler = self.ivars().disappear.borrow().clone();
             if let Some(handler) = handler {
                 handler();
@@ -147,8 +123,6 @@ impl NavContentController {
             search_change: RefCell::new(None),
             search_updater: RefCell::new(None),
             search_controller: RefCell::new(None),
-            capsule_bar: RefCell::new(None),
-            capsule_inset: Cell::new(0.0),
         });
         // SAFETY: `initWithNibName:bundle:` is `UIViewController`'s
         // designated initializer; nil names and bundles load nothing.
@@ -248,130 +222,48 @@ impl NavContentController {
         }
         self.ivars().search_updater.replace(None);
         self.ivars().search_controller.replace(None);
-        self.unmount_capsule();
         if let Some(search) = &page.search {
-            if let Some(metrics) = search.custom_bar {
-                // A caller-measured `NavSearchBar` mounted as a direct
-                // navigation-bar subview — the capsule form the integrated
-                // `item.searchController` bar cannot reproduce. The slot is
-                // reserved through `additionalSafeAreaInsets`, applied at
-                // the next appear/layout pass once a stack exists.
-                let bar = NavSearchBar::new(mtm, metrics);
-                bar.set_prompt(&search.placeholder);
-                bar.setText(Some(&NSString::from_str(&search.text)));
-                bar.set_change_handler({
-                    let this = Retained::<Self>::from(self);
-                    move |text| {
-                        if let Some(handler) = this.ivars().search_change.borrow().as_ref() {
-                            handler(text);
-                        }
+            // SAFETY: `initWithSearchResultsController:` is
+            // `UISearchController`'s designated initializer; a nil
+            // results controller keeps the current content — a
+            // results-less search controller draws over the page
+            // itself.
+            let controller: Retained<UISearchController> = unsafe {
+                msg_send![
+                    mtm.alloc::<UISearchController>(),
+                    initWithSearchResultsController: Option::<&UIViewController>::None
+                ]
+            };
+            let bar = controller.searchBar();
+            bar.setPlaceholder(Some(&NSString::from_str(&search.placeholder)));
+            bar.setText(Some(&NSString::from_str(&search.text)));
+            let updater = SearchUpdater::new(mtm);
+            updater.set_change_handler({
+                let this = Retained::<Self>::from(self);
+                move |text| {
+                    if let Some(handler) = this.ivars().search_change.borrow().as_ref() {
+                        handler(text);
                     }
-                });
-                self.ivars().capsule_bar.replace(Some(bar));
-                self.mount_capsule();
-                item.setSearchController(None);
-            } else {
-                // SAFETY: `initWithSearchResultsController:` is
-                // `UISearchController`'s designated initializer; a nil
-                // results controller keeps the current content — a
-                // results-less search controller draws over the page
-                // itself.
-                let controller: Retained<UISearchController> = unsafe {
-                    msg_send![
-                        mtm.alloc::<UISearchController>(),
-                        initWithSearchResultsController: Option::<&UIViewController>::None
-                    ]
-                };
-                let bar = controller.searchBar();
-                bar.setPlaceholder(Some(&NSString::from_str(&search.placeholder)));
-                bar.setText(Some(&NSString::from_str(&search.text)));
-                let updater = SearchUpdater::new(mtm);
-                updater.set_change_handler({
-                    let this = Retained::<Self>::from(self);
-                    move |text| {
-                        if let Some(handler) = this.ivars().search_change.borrow().as_ref() {
-                            handler(text);
-                        }
-                    }
-                });
-                controller.setSearchResultsUpdater(Some(ProtocolObject::from_ref(&*updater)));
-                if let Some(placement) = search.placement {
-                    item.setPreferredSearchBarPlacement(placement.native());
                 }
-                if let Some(hides) = search.hides_when_scrolling {
-                    item.setHidesSearchBarWhenScrolling(hides);
-                }
-                item.setSearchController(Some(&controller));
-                // `searchResultsUpdater` is a weak outlet — the controller
-                // keeps the updater and drawer alive for the page's life.
-                self.ivars().search_updater.replace(Some(updater));
-                self.ivars().search_controller.replace(Some(controller));
-                self.setDefinesPresentationContext(true);
+            });
+            controller.setSearchResultsUpdater(Some(ProtocolObject::from_ref(&*updater)));
+            if let Some(placement) = search.placement {
+                item.setPreferredSearchBarPlacement(placement.native());
             }
+            if let Some(hides) = search.hides_when_scrolling {
+                item.setHidesSearchBarWhenScrolling(hides);
+            }
+            item.setSearchController(Some(&controller));
+            // `searchResultsUpdater` is a weak outlet — the controller
+            // keeps the updater and drawer alive for the page's life.
+            self.ivars().search_updater.replace(Some(updater));
+            self.ivars().search_controller.replace(Some(controller));
+            self.setDefinesPresentationContext(true);
         } else {
             item.setSearchController(None);
         }
         if let Some(nav) = self.navigationController() {
             nav.setNavigationBarHidden_animated(page.hidden, false);
-        }
-    }
-
-    /// Attaches `capsule_bar` to the navigation controller's view, in the
-    /// `slot_height` band below the navigation bar's bottom edge — the
-    /// field pill sits centered in the slot, `field_inset` in from each
-    /// side. Mounting on the nav bar itself is not an option: the bar
-    /// re-frames its subviews. The controller's
-    /// `additionalSafeAreaInsets.top` grows by the slot to keep content
-    /// below the field. Called from `set_page` and retried from every
-    /// appear and layout pass — `navigationController` is nil until the
-    /// page enters the stack, and the nav bar's frame settles after
-    /// layout.
-    fn mount_capsule(&self) {
-        let Some(bar) = self.ivars().capsule_bar.borrow().clone() else {
-            return;
-        };
-        let Some(nav) = self.navigationController() else {
-            return;
-        };
-        let Some(host) = nav.view() else {
-            return;
-        };
-        if bar.superview().is_none() {
-            host.addSubview(&bar);
-        }
-        let nav_bar = nav.navigationBar();
-        let bottom = nav_bar.frame().origin.y + nav_bar.frame().size.height;
-        let width = host.bounds().size.width;
-        let height = bar.field_height();
-        let inset = bar.field_inset();
-        bar.setFrame(CGRect::new(
-            CGPoint::new(inset, bottom + bar.field_y()),
-            CGSize::new(f64::max(0.0, width - inset - inset), height),
-        ));
-        // Width tracks the host; the top edge stays pinned under the bar.
-        bar.setAutoresizingMask(UIViewAutoresizing::FlexibleWidth);
-        let mut insets = self.additionalSafeAreaInsets();
-        let slot = bar.slot_height();
-        let applied = self.ivars().capsule_inset.get();
-        if applied.to_bits() != slot.to_bits() {
-            insets.top += slot - applied;
-            self.setAdditionalSafeAreaInsets(insets);
-            self.ivars().capsule_inset.set(slot);
-        }
-    }
-
-    /// Detaches `capsule_bar` and restores the additional inset it
-    /// applied.
-    fn unmount_capsule(&self) {
-        let bar = self.ivars().capsule_bar.replace(None);
-        let applied = self.ivars().capsule_inset.replace(0.0);
-        if let Some(bar) = bar {
-            bar.removeFromSuperview();
-        }
-        if applied != 0.0 {
-            let mut insets = self.additionalSafeAreaInsets();
-            insets.top -= applied;
-            self.setAdditionalSafeAreaInsets(insets);
         }
     }
 
@@ -386,10 +278,6 @@ impl NavContentController {
     /// Drives the binding→platform direction without going through the
     /// change handler.
     pub fn set_search_text(&self, text: &str) {
-        if let Some(bar) = self.ivars().capsule_bar.borrow().as_ref() {
-            bar.setText(Some(&NSString::from_str(text)));
-            return;
-        }
         // SAFETY: `navigationItem` is a `UIViewController` getter on the
         // main thread.
         let item: Retained<objc2_ui_kit::UINavigationItem> =
@@ -403,11 +291,6 @@ impl NavContentController {
 
     /// The search drawer's placeholder, when one is attached.
     pub fn set_search_placeholder(&self, placeholder: &str) {
-        let capsule = self.ivars().capsule_bar.borrow().clone();
-        if let Some(bar) = capsule {
-            bar.set_prompt(placeholder);
-            return;
-        }
         // SAFETY: `navigationItem` is a `UIViewController` getter on the
         // main thread.
         let item: Retained<objc2_ui_kit::UINavigationItem> =
@@ -529,187 +412,6 @@ impl SearchBarPlacement {
     }
 }
 
-/// The geometry a `NavSearchBar` reports and lays its field out at.
-#[derive(Debug, Clone, Copy)]
-pub struct SearchBarMetrics {
-    /// The slot height reserved under the navigation bar through
-    /// `additionalSafeAreaInsets`.
-    pub slot_height: f64,
-    /// The text field's height inside the bar.
-    pub field_height: f64,
-    /// The field's inset from each side edge.
-    pub field_inset: f64,
-    /// The field's offset below the navigation bar's bottom edge.
-    pub field_y: f64,
-}
-
-/// A search field mounted under a navigation bar — a `UITextField` with
-/// the rounded-rect border, resting as an empty pill in the slot
-/// `SearchBarMetrics::slot_height` reserves. It is its own
-/// `UITextFieldDelegate`: the prompt applies only while it edits, and
-/// text edits report through `set_change_handler`.
-pub struct NavSearchBarIvars {
-    /// The slot height the capsule reserves under the navigation bar.
-    slot_height: Cell<f64>,
-    /// The pill's height inside the slot.
-    field_height: Cell<f64>,
-    /// The pill's inset from each side edge of the slot.
-    field_inset: Cell<f64>,
-    /// The pill's offset below the navigation bar's bottom edge.
-    field_y: Cell<f64>,
-    /// Applied to the placeholder while the field edits; it rests empty.
-    prompt: RefCell<String>,
-    /// Called with the field's current text on each edit.
-    change: RefCell<Option<SearchChangeHandler>>,
-}
-
-impl fmt::Debug for NavSearchBarIvars {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NavSearchBarIvars").finish()
-    }
-}
-
-define_class!(
-    // SAFETY: `UITextField`'s designated initializer is `initWithFrame:`,
-    // which `NavSearchBar::new` calls, and the class does not implement
-    // `Drop`.
-    #[unsafe(super(UITextField))]
-    #[name = "CocoaUiNavSearchBar"]
-    #[thread_kind = MainThreadOnly]
-    #[ivars = NavSearchBarIvars]
-    #[derive(Debug)]
-    /// The search field a navigation page mounts below the bar.
-    pub struct NavSearchBar;
-
-    // SAFETY: `NSObjectProtocol` asks nothing of a `UITextField`.
-    unsafe impl NSObjectProtocol for NavSearchBar {}
-
-    // SAFETY: `UITextFieldDelegate` is optional-only; the editing hooks
-    // carry the delegate's own signatures. The field is its own delegate —
-    // nothing else competes for the slot.
-    unsafe impl UITextFieldDelegate for NavSearchBar {
-        // SAFETY: `textFieldDidBeginEditing:` carries the delegate's
-        // signature.
-        #[unsafe(method(textFieldDidBeginEditing:))]
-        fn text_field_did_begin_editing(&self, text_field: &UITextField) {
-            let prompt = self.ivars().prompt.borrow().clone();
-            if !prompt.is_empty() {
-                text_field.setPlaceholder(Some(&NSString::from_str(&prompt)));
-            }
-        }
-
-        // SAFETY: `textFieldDidEndEditing:` carries the delegate's
-        // signature.
-        #[unsafe(method(textFieldDidEndEditing:))]
-        fn text_field_did_end_editing(&self, text_field: &UITextField) {
-            text_field.setPlaceholder(None);
-        }
-
-        // SAFETY: `textFieldShouldReturn:` carries the delegate's
-        // signature.
-        #[unsafe(method(textFieldShouldReturn:))]
-        fn text_field_should_return(&self, text_field: &UITextField) -> bool {
-            // SAFETY: `resignFirstResponder` is a `UIResponder` send on
-            // the main thread.
-            let _: bool = unsafe { msg_send![text_field, resignFirstResponder] };
-            true
-        }
-    }
-
-    impl NavSearchBar {
-        // SAFETY: `editingChanged` is a control event on `self`.
-        #[unsafe(method(capsuleEditingChanged))]
-        fn capsule_editing_changed(&self) {
-            let handler = self.ivars().change.borrow().clone();
-            if let Some(handler) = handler {
-                handler(self.text().map(|text| text.to_string()).unwrap_or_default());
-            }
-        }
-    }
-);
-
-impl NavSearchBar {
-    /// A rounded-rect text field at `metrics`, resting empty, delegated
-    /// to itself.
-    #[must_use]
-    pub fn new(mtm: MainThreadMarker, metrics: SearchBarMetrics) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(NavSearchBarIvars {
-            slot_height: Cell::new(metrics.slot_height),
-            field_height: Cell::new(metrics.field_height),
-            field_inset: Cell::new(metrics.field_inset),
-            field_y: Cell::new(metrics.field_y),
-            prompt: RefCell::new(String::new()),
-            change: RefCell::new(None),
-        });
-        // SAFETY: `initWithFrame:` is `UITextField`'s designated
-        // initializer.
-        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] };
-        // `tertiarySystemFill` over the surrounding group background is
-        // the resting pill; the pill's shape comes from the layer's
-        // corner radius.
-        // SAFETY: `tertiarySystemFillColor` is a `UIColor` class getter;
-        // the fill accessors are not in the generated bindings.
-        let fill: Retained<UIColor> =
-            unsafe { msg_send![<UIColor as ClassType>::class(), tertiarySystemFillColor] };
-        this.setBackgroundColor(Some(&fill));
-        let layer = this.layer();
-        layer.setCornerRadius(metrics.field_height / 2.0);
-        layer.setMasksToBounds(true);
-        // SAFETY: `setReturnKeyType:` is a `UITextInputTraits` setter
-        // `UITextField` resolves dynamically — a raw send keeps the
-        // binding's class-method check from misfiring (see
-        // `text_field::send_trait_setter`).
-        let _: () = unsafe { msg_send![&*this, setReturnKeyType: UIReturnKeyType::Search] };
-        // `this` is its own `UITextFieldDelegate` — the delegate slot is
-        // a weak outlet, so the field stays the only owner of itself.
-        this.setDelegate(Some(ProtocolObject::from_ref::<Self>(this.as_ref())));
-        // SAFETY: `self` is the target of `capsuleEditingChanged`.
-        unsafe {
-            this.addTarget_action_forControlEvents(
-                Some(
-                    std::ptr::from_ref::<Self>(this.as_ref())
-                        .cast::<AnyObject>()
-                        .as_ref()
-                        .unwrap_unchecked(),
-                ),
-                objc2::sel!(capsuleEditingChanged),
-                objc2_ui_kit::UIControlEvents::EditingChanged,
-            );
-        }
-        this
-    }
-
-    /// The reserved slot height under the navigation bar.
-    pub fn slot_height(&self) -> f64 {
-        self.ivars().slot_height.get()
-    }
-
-    /// The pill's height inside the slot.
-    pub fn field_height(&self) -> f64 {
-        self.ivars().field_height.get()
-    }
-
-    /// The pill's inset from each side edge of the slot.
-    pub fn field_inset(&self) -> f64 {
-        self.ivars().field_inset.get()
-    }
-
-    /// The pill's offset below the navigation bar's bottom edge.
-    pub fn field_y(&self) -> f64 {
-        self.ivars().field_y.get()
-    }
-
-    /// The text the field shows as its placeholder while it edits.
-    pub fn set_prompt(&self, prompt: &str) {
-        self.ivars().prompt.replace(prompt.to_string());
-    }
-
-    /// Runs `handler` with the field's current text on each edit.
-    pub fn set_change_handler(&self, handler: impl Fn(String) + 'static) {
-        self.ivars().change.replace(Some(Rc::new(handler)));
-    }
-}
-
 /// A page's search drawer: the field's placeholder, its text at install
 /// time, and where the field sits in the bar.
 #[derive(Debug, Default)]
@@ -725,11 +427,6 @@ pub struct NavSearch {
     /// content scroll offset — a bar `UIKit` never sees scroll begins at
     /// zero height. `None` leaves the platform default in place.
     pub hides_when_scrolling: Option<bool>,
-    /// Mounts a `NavSearchBar` at these metrics in the navigation
-    /// controller's view instead of the platform's integrated search bar;
-    /// the controller reserves the slot through
-    /// `additionalSafeAreaInsets`.
-    pub custom_bar: Option<SearchBarMetrics>,
 }
 
 /// One page's navigation-bar chrome.
