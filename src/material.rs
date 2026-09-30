@@ -52,8 +52,8 @@ const fn material(level: MaterialLevel) -> NSVisualEffectMaterial {
     match level {
         MaterialLevel::UltraThin => NSVisualEffectMaterial::HUDWindow,
         MaterialLevel::Thin => NSVisualEffectMaterial::Titlebar,
-        MaterialLevel::Regular => NSVisualEffectMaterial::Menu,
-        MaterialLevel::Thick | MaterialLevel::UltraThick => NSVisualEffectMaterial::Sidebar,
+        MaterialLevel::Regular | MaterialLevel::Thick => NSVisualEffectMaterial::Menu,
+        MaterialLevel::UltraThick => NSVisualEffectMaterial::Sidebar,
     }
 }
 
