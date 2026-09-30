@@ -710,7 +710,7 @@ define_class!(
             // SAFETY: the super implementation keeps the cell's chrome laid
             // out before the content hook runs.
             let _: () = unsafe { msg_send![super(self), layoutSubviews] };
-            let handler = self.ivars().on_layout.borrow().clone();
+            let handler = self.cell_ivars().on_layout.borrow().clone();
             if let Some(handler) = handler {
                 guarded("uikit::table::cell.on_layout", || handler(self));
             }
@@ -721,7 +721,7 @@ define_class!(
             // SAFETY: the super implementation performs the system's reuse
             // bookkeeping before the payload drops.
             let _: () = unsafe { msg_send![super(self), prepareForReuse] };
-            self.ivars().payload.take();
+            self.cell_ivars().payload.take();
         }
 
         #[unsafe(method(setSelected:animated:))]
@@ -734,7 +734,7 @@ define_class!(
 
         #[unsafe(method(accessibilityActivate))]
         fn accessibility_activate(&self) -> Bool {
-            let handler = self.ivars().on_activate.borrow().clone();
+            let handler = self.cell_ivars().on_activate.borrow().clone();
             Bool::new(guarded("uikit::table::cell.on_activate", || {
                 handler.is_some_and(|handler| {
                     handler(self);
@@ -746,6 +746,17 @@ define_class!(
 );
 
 impl TableCell {
+    /// The cell's ivars, lazily marking `objc2`'s drop flag for reuse-pool
+    /// cells: `dequeueReusableCellWithIdentifier:` creates them through
+    /// `+alloc` and `initWithStyle:reuseIdentifier:` without `set_ivars`, so
+    /// the flag reads `Allocated` — a state `ivars()` panics on under debug
+    /// assertions. The zero-filled storage is already a valid
+    /// `TableCellIvars` (every field is `None`/empty), so the flag only
+    /// needs marking.
+    fn cell_ivars(&self) -> &TableCellIvars {
+        lazy_ivars(self)
+    }
+
     /// Creates a reuse-pool cell.
     pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TableCellIvars::default());
@@ -762,7 +773,7 @@ impl TableCell {
     /// Mounts `content` inside the cell's `contentView`, pinned `insets`
     /// inward. `shows_disclosure` toggles the disclosure-indicator accessory.
     pub fn configure(&self, content: &UIView, insets: EdgeInsets, shows_disclosure: bool) {
-        let ivars = self.ivars();
+        let ivars = self.cell_ivars();
         if let Some(old) = ivars.content.replace(Some(content.retain())) {
             old.removeFromSuperview();
         }
@@ -803,26 +814,28 @@ impl TableCell {
 
     /// The mounted content view.
     pub fn content(&self) -> Option<Retained<UIView>> {
-        self.ivars().content.borrow().clone()
+        self.cell_ivars().content.borrow().clone()
     }
 
     /// Stores `value` in the cell; the previous payload is dropped — and
     /// `prepareForReuse` drops it — so watchers the consumer stores here
     /// release with the reuse.
     pub fn set_payload(&self, value: Box<dyn Any>) {
-        *self.ivars().payload.borrow_mut() = Some(value);
+        *self.cell_ivars().payload.borrow_mut() = Some(value);
     }
 
     /// Installs the hook `layoutSubviews` fires after the system layout —
     /// where placement proposals and separator insets get resolved.
     pub fn set_layout_handler(&self, handler: impl Fn(&Self) + 'static) {
-        self.ivars().on_layout.replace(Some(Rc::new(handler)));
+        self.cell_ivars().on_layout.replace(Some(Rc::new(handler)));
     }
 
     /// Installs the hook `accessibilityActivate` fires; a cell with a hook
     /// reports it handled the activation.
     pub fn set_activate_handler(&self, handler: impl Fn(&Self) + 'static) {
-        self.ivars().on_activate.replace(Some(Rc::new(handler)));
+        self.cell_ivars()
+            .on_activate
+            .replace(Some(Rc::new(handler)));
     }
 
     /// The separator's inset.
@@ -892,12 +905,21 @@ define_class!(
         fn prepare_for_reuse(&self) {
             // SAFETY: the super implementation restores default state.
             let _: () = unsafe { msg_send![super(self), prepareForReuse] };
-            self.ivars().payload.take();
+            self.view_ivars().payload.take();
         }
     }
 );
 
 impl TableHeaderFooterView {
+    /// The view's ivars, lazily marking `objc2`'s drop flag for reuse-pool
+    /// views: `dequeueReusableHeaderFooterViewWithIdentifier:` creates them
+    /// through `+alloc` and `initWithReuseIdentifier:` without `set_ivars`.
+    /// The zero-filled storage is already a valid
+    /// `TableHeaderFooterViewIvars`, so the flag only needs marking.
+    fn view_ivars(&self) -> &TableHeaderFooterViewIvars {
+        lazy_ivars(self)
+    }
+
     /// Creates a reuse-pool view.
     pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TableHeaderFooterViewIvars::default());
@@ -922,6 +944,49 @@ impl TableHeaderFooterView {
     /// `prepareForReuse` drops the current one, so watchers the consumer
     /// stores here are released when the cell is recycled.
     pub fn set_payload(&self, value: Box<dyn Any>) {
-        *self.ivars().payload.borrow_mut() = Some(value);
+        *self.view_ivars().payload.borrow_mut() = Some(value);
+    }
+}
+
+/// The ivars of a `define_class` type the `UIKit` reuse pool can create:
+/// `+alloc` zero-fills the storage — already a valid `Default`-shaped ivar
+/// state for `Option`/`Vec`/`Cell` fields — while `objc2`'s `drop_flag`
+/// still reads `Allocated`, which `ivars()` panics on under debug
+/// assertions. This marks it `InitializedIvars` once, then reads the
+/// storage at the `ivars` ivar's offset.
+fn lazy_ivars<T>(this: &T) -> &T::Ivars
+where
+    T: ClassType + DefinedClass,
+{
+    let cls = T::class();
+    let ivars_offset = cls
+        .instance_variable(c"ivars")
+        .expect("objc2 stores DefinedClass ivars under the `ivars` ivar")
+        .offset();
+    if let Some(flag) = cls.instance_variable(c"drop_flag") {
+        // SAFETY: `drop_flag` is objc2's one-byte ivar-state marker at a
+        // valid in-object offset; `0x00` is `Allocated` and `0x0f` is
+        // `InitializedIvars`. The zero-filled storage is already a valid
+        // `T::Ivars`, so marking it records what is already true.
+        unsafe {
+            let slot = std::ptr::from_ref::<T>(this)
+                .cast::<u8>()
+                .offset(flag.offset())
+                .cast_mut();
+            if *slot == 0x00 {
+                *slot = 0x0f;
+            }
+        }
+    }
+    // SAFETY: the `ivars` ivar is the storage `#[ivars = T::Ivars]`
+    // registers, so the offset addresses a correctly aligned `T::Ivars`;
+    // freshly allocated objects hold it zero-filled — a valid ivar state
+    // for `Option`/`Vec`/`Cell` fields — and `set_ivars` objects hold it
+    // initialized.
+    unsafe {
+        &*std::ptr::from_ref::<T>(this)
+            .cast::<u8>()
+            .offset(ivars_offset)
+            .cast::<T::Ivars>()
     }
 }
