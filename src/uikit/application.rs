@@ -226,7 +226,14 @@ define_class!(
                 true
             })
         }
+    }
 
+    impl AppDelegate {
+        // Registered outside the protocol impl: `application:buildMenuWith:`
+        // exists in `UIApplicationDelegate` only on Mac Catalyst, and the
+        // debug protocol check rejects methods the generated trait does not
+        // list.
+        // SAFETY: see the module safety note.
         #[unsafe(method(application:buildMenuWith:))]
         fn application_build_menu(
             &self,
