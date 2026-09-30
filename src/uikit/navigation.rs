@@ -246,8 +246,12 @@ impl NavContentController {
                 }
             });
             controller.setSearchResultsUpdater(Some(ProtocolObject::from_ref(&*updater)));
-            item.setPreferredSearchBarPlacement(search.placement.native());
-            item.setHidesSearchBarWhenScrolling(search.hides_when_scrolling);
+            if let Some(placement) = search.placement {
+                item.setPreferredSearchBarPlacement(placement.native());
+            }
+            if let Some(hides) = search.hides_when_scrolling {
+                item.setHidesSearchBarWhenScrolling(hides);
+            }
             item.setSearchController(Some(&controller));
             // `searchResultsUpdater` is a weak outlet — the controller keeps
             // the updater and drawer alive for the page's life.
@@ -416,11 +420,12 @@ pub struct NavSearch {
     /// The text the field starts with — the binding's current value.
     pub text: String,
     /// The field's placement in the bar — `preferredSearchBarPlacement`.
-    pub placement: SearchBarPlacement,
+    /// `None` leaves the platform default in place.
+    pub placement: Option<SearchBarPlacement>,
     /// `hidesSearchBarWhenScrolling`: when true the bar's height tracks the
-    /// content scroll offset — a bar UIKit never sees scroll begins at zero
-    /// height.
-    pub hides_when_scrolling: bool,
+    /// content scroll offset — a bar `UIKit` never sees scroll begins at
+    /// zero height. `None` leaves the platform default in place.
+    pub hides_when_scrolling: Option<bool>,
 }
 
 /// One page's navigation-bar chrome.
