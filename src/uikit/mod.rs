@@ -57,7 +57,7 @@ mod search_bar;
 mod split;
 pub mod surface_view;
 mod tabs;
-mod view_controller;
+pub mod view_controller;
 mod window;
 
 pub use appearance::{ColorSchemeObservation, current_scheme};

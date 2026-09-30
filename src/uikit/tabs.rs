@@ -80,7 +80,21 @@ impl TabContentController {
                 bundle: Option::<&objc2_foundation::NSBundle>::None
             ]
         };
+        // `view` can itself be a controller's root — a `NavigationStack`
+        // pane is a `UINavigationController`'s view. Capture that owner
+        // before `setView` installs `this` as the view's responder
+        // delegate, or the walk would return `this` and self-child.
+        let owner = crate::uikit::view_controller::owning_controller(view);
         this.setView(Some(view));
+        // UIKit only forwards appearance and layout callbacks down a real
+        // containment chain, so the pane controller must become this
+        // controller's child.
+        if let Some(child) = owner
+            && Retained::as_ptr(&child) != Retained::as_ptr(&this).cast()
+        {
+            crate::uikit::view_controller::add_child(&this, &child);
+            crate::uikit::view_controller::did_move_to_parent(&child);
+        }
         this
     }
 }

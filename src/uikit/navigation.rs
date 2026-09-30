@@ -133,7 +133,18 @@ impl NavContentController {
                 bundle: Option::<&objc2_foundation::NSBundle>::None
             ]
         };
+        // A nested `UINavigationController`'s view (a stack inside a page)
+        // still needs the containment chain for its appearance callbacks;
+        // capture the owner before `setView` installs `this` as the view's
+        // responder delegate.
+        let owner = crate::uikit::view_controller::owning_controller(view);
         this.setView(Some(view));
+        if let Some(child) = owner
+            && Retained::as_ptr(&child) != Retained::as_ptr(&this).cast()
+        {
+            crate::uikit::view_controller::add_child(&this, &child);
+            crate::uikit::view_controller::did_move_to_parent(&child);
+        }
         this
     }
 
