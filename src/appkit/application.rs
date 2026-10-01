@@ -64,6 +64,14 @@ impl AttentionRequest {
     }
 }
 
+/// An outstanding attention request — what
+/// [`Application::request_user_attention`] hands back and
+/// [`Application::cancel_user_attention_request`] takes to stop the
+/// request early.
+#[derive(Debug)]
+#[must_use = "an uncancelled request bounces until the application is activated"]
+pub struct AttentionRequestToken(isize);
+
 type OnceHandler = Box<dyn FnOnce(MainThreadMarker)>;
 type QueryHandler = Box<dyn Fn(MainThreadMarker) -> bool>;
 
@@ -173,16 +181,19 @@ impl Application {
     /// bounce `NSApplication.requestUserAttention` produces — and answers
     /// the request's token, which [`Self::cancel_user_attention_request`]
     /// takes to stop it early.
-    #[must_use]
-    pub fn request_user_attention(&self, kind: AttentionRequest) -> isize {
-        self.app.requestUserAttention(kind.native())
+    pub fn request_user_attention(&self, kind: AttentionRequest) -> AttentionRequestToken {
+        AttentionRequestToken(self.app.requestUserAttention(kind.native()))
     }
 
     /// Cancels an outstanding attention request —
     /// `NSApplication.cancelUserAttentionRequest`, which also stops the Dock
     /// bounce.
-    pub fn cancel_user_attention_request(&self, request: isize) {
-        self.app.cancelUserAttentionRequest(request);
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "consuming the token is the contract: it names one request and cannot be cancelled twice"
+    )]
+    pub fn cancel_user_attention_request(&self, request: AttentionRequestToken) {
+        self.app.cancelUserAttentionRequest(request.0);
     }
 
     /// Terminates the application: the equivalent of Quit — the delegate's
