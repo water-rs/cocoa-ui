@@ -45,10 +45,14 @@ bitflags! {
         const RESIZABLE = 1 << 3;
         /// The content area extends behind the title bar and toolbars.
         const FULL_SIZE_CONTENT_VIEW = 1 << 4;
+        /// The window's live full-screen state — `AppKit` owns the bit; a
+        /// style rewrite keeps it so the write does not ask the window to
+        /// leave full screen.
+        const FULL_SCREEN = 1 << 5;
     }
 }
 
-const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 5] = [
+const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 6] = [
     (WindowStyle::TITLED, NSWindowStyleMask::Titled),
     (WindowStyle::CLOSABLE, NSWindowStyleMask::Closable),
     (
@@ -60,6 +64,7 @@ const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 5] = [
         WindowStyle::FULL_SIZE_CONTENT_VIEW,
         NSWindowStyleMask::FullSizeContentView,
     ),
+    (WindowStyle::FULL_SCREEN, NSWindowStyleMask::FullScreen),
 ];
 
 impl WindowStyle {
@@ -675,6 +680,7 @@ mod tests {
                 | NSWindowStyleMask::Miniaturizable
                 | NSWindowStyleMask::Resizable
                 | NSWindowStyleMask::FullSizeContentView
+                | NSWindowStyleMask::FullScreen
         );
         assert_eq!(
             (WindowStyle::TITLED | WindowStyle::RESIZABLE).native(),
