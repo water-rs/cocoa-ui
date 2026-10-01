@@ -14,7 +14,9 @@ use std::fmt;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSRequestUserAttentionType,
+};
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
 
 use super::menu::Menu;
@@ -41,6 +43,34 @@ impl ActivationPolicy {
         }
     }
 }
+
+/// How urgently an attention request presents itself —
+/// `NSRequestUserAttentionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AttentionRequest {
+    /// A single bounce of the Dock icon — `NSInformationalRequest`.
+    Informational,
+    /// The Dock icon bounces until the request is cancelled or the
+    /// application is focused — `NSCriticalRequest`.
+    Critical,
+}
+
+impl AttentionRequest {
+    const fn native(self) -> NSRequestUserAttentionType {
+        match self {
+            Self::Informational => NSRequestUserAttentionType::InformationalRequest,
+            Self::Critical => NSRequestUserAttentionType::CriticalRequest,
+        }
+    }
+}
+
+/// An outstanding attention request — what
+/// [`Application::request_user_attention`] hands back and
+/// [`Application::cancel_user_attention_request`] takes to stop the
+/// request early.
+#[derive(Debug)]
+#[must_use = "an uncancelled request bounces until the application is activated"]
+pub struct AttentionRequestToken(isize);
 
 type OnceHandler = Box<dyn FnOnce(MainThreadMarker)>;
 type QueryHandler = Box<dyn Fn(MainThreadMarker) -> bool>;
@@ -145,6 +175,25 @@ impl Application {
     /// for every open window.
     pub fn set_windows_menu(&self, menu: &Menu) {
         self.app.setWindowsMenu(Some(menu.native()));
+    }
+
+    /// Asks for the user's attention at `kind`'s urgency — the Dock-icon
+    /// bounce `NSApplication.requestUserAttention` produces — and answers
+    /// the request's token, which [`Self::cancel_user_attention_request`]
+    /// takes to stop it early.
+    pub fn request_user_attention(&self, kind: AttentionRequest) -> AttentionRequestToken {
+        AttentionRequestToken(self.app.requestUserAttention(kind.native()))
+    }
+
+    /// Cancels an outstanding attention request —
+    /// `NSApplication.cancelUserAttentionRequest`, which also stops the Dock
+    /// bounce.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "consuming the token is the contract: it names one request and cannot be cancelled twice"
+    )]
+    pub fn cancel_user_attention_request(&self, request: AttentionRequestToken) {
+        self.app.cancelUserAttentionRequest(request.0);
     }
 
     /// Terminates the application: the equivalent of Quit — the delegate's

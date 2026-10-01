@@ -21,8 +21,8 @@ use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSAnimatablePropertyContainer, NSAnimationContext, NSAppearance, NSAppearanceCustomization,
-    NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBackingStoreType, NSView, NSWindow,
-    NSWindowDelegate, NSWindowStyleMask,
+    NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBackingStoreType, NSFloatingWindowLevel,
+    NSNormalWindowLevel, NSView, NSWindow, NSWindowDelegate, NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString};
 
@@ -45,10 +45,45 @@ bitflags! {
         const RESIZABLE = 1 << 3;
         /// The content area extends behind the title bar and toolbars.
         const FULL_SIZE_CONTENT_VIEW = 1 << 4;
+        /// The window's live full-screen state — `AppKit` owns the bit; a
+        /// style rewrite keeps it so the write does not ask the window to
+        /// leave full screen.
+        const FULL_SCREEN = 1 << 5;
     }
 }
 
-const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 5] = [
+/// Where a window stacks relative to other applications' windows —
+/// `NSWindow.level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WindowLevel {
+    /// Stacked with ordinary windows — `NSNormalWindowLevel`.
+    Normal,
+    /// Above ordinary windows — `NSFloatingWindowLevel`, always on top.
+    Floating,
+}
+
+impl WindowLevel {
+    const fn native(self) -> NSWindowLevel {
+        match self {
+            Self::Normal => NSNormalWindowLevel,
+            Self::Floating => NSFloatingWindowLevel,
+        }
+    }
+
+    /// The `WindowLevel` `level` names — `None` for a level the enum does
+    /// not model.
+    fn from_native(level: NSWindowLevel) -> Option<Self> {
+        if level == NSNormalWindowLevel {
+            Some(Self::Normal)
+        } else if level == NSFloatingWindowLevel {
+            Some(Self::Floating)
+        } else {
+            None
+        }
+    }
+}
+
+const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 6] = [
     (WindowStyle::TITLED, NSWindowStyleMask::Titled),
     (WindowStyle::CLOSABLE, NSWindowStyleMask::Closable),
     (
@@ -60,6 +95,7 @@ const STYLE_PARTS: [(WindowStyle, NSWindowStyleMask); 5] = [
         WindowStyle::FULL_SIZE_CONTENT_VIEW,
         NSWindowStyleMask::FullSizeContentView,
     ),
+    (WindowStyle::FULL_SCREEN, NSWindowStyleMask::FullScreen),
 ];
 
 impl WindowStyle {
@@ -368,6 +404,51 @@ impl Window {
             .replace(Some(Rc::new(handler)));
     }
 
+    /// The window's level — where it stacks relative to other applications'
+    /// windows, `NSWindow.level`. `None` when the window sits at a level
+    /// [`WindowLevel`] does not model.
+    #[must_use]
+    pub fn level(&self) -> Option<WindowLevel> {
+        WindowLevel::from_native(self.window.level())
+    }
+
+    /// Moves the window to `level` — `Floating` keeps it above ordinary
+    /// windows, `Normal` stacks it with them.
+    pub fn set_level(&self, level: WindowLevel) {
+        self.window.setLevel(level.native());
+    }
+
+    /// Whether the window fills its screen's visible frame — `NSWindow`'s
+    /// user-driven maximize.
+    #[must_use]
+    pub fn is_zoomed(&self) -> bool {
+        self.window.isZoomed()
+    }
+
+    /// Toggles the window's zoom: a zoomed window shrinks back, any other
+    /// fills the screen's visible frame.
+    ///
+    /// `AppKit` ignores the call on a miniaturized or full-screen window, so
+    /// a caller driving window state unwinds those first.
+    pub fn zoom(&self) {
+        self.window.zoom(None);
+    }
+
+    /// The steps the window's content size moves in while the user resizes
+    /// it — `NSWindow.contentResizeIncrements`.
+    pub fn set_content_resize_increments(&self, size: Size) {
+        self.window.setContentResizeIncrements(size.into());
+    }
+
+    /// Calls `handler` after the window becomes key, replacing any handler
+    /// set before.
+    pub fn on_became_key(&self, handler: impl Fn() + 'static) {
+        self.delegate
+            .ivars()
+            .became_key
+            .replace(Some(Rc::new(handler)));
+    }
+
     /// Whether the window is collapsed into the Dock.
     #[must_use]
     pub fn is_miniaturized(&self) -> bool {
@@ -468,6 +549,7 @@ struct DelegateIvars {
     resize: RefCell<Option<Handler>>,
     moved: RefCell<Option<Handler>>,
     live_resize_end: RefCell<Option<Handler>>,
+    became_key: RefCell<Option<Handler>>,
     miniaturized: RefCell<Option<Handler>>,
     deminiaturized: RefCell<Option<Handler>>,
     entered_fullscreen: RefCell<Option<Handler>>,
@@ -523,6 +605,13 @@ define_class!(
         fn window_did_end_live_resize(&self, _notification: &NSNotification) {
             guarded("windowDidEndLiveResize:", || {
                 DelegateIvars::fire(&self.ivars().live_resize_end);
+            });
+        }
+
+        #[unsafe(method(windowDidBecomeKey:))]
+        fn window_did_become_key(&self, _notification: &NSNotification) {
+            guarded("windowDidBecomeKey:", || {
+                DelegateIvars::fire(&self.ivars().became_key);
             });
         }
 
@@ -623,6 +712,7 @@ mod tests {
                 | NSWindowStyleMask::Miniaturizable
                 | NSWindowStyleMask::Resizable
                 | NSWindowStyleMask::FullSizeContentView
+                | NSWindowStyleMask::FullScreen
         );
         assert_eq!(
             (WindowStyle::TITLED | WindowStyle::RESIZABLE).native(),

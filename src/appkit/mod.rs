@@ -66,7 +66,9 @@ mod window;
 
 pub use animate::{run_animation, set_animated_alpha};
 pub use appearance::ColorSchemeObservation;
-pub use application::{ActivationPolicy, Application, ApplicationHandlers};
+pub use application::{
+    ActivationPolicy, Application, ApplicationHandlers, AttentionRequest, AttentionRequestToken,
+};
 pub use badge::BadgeView;
 pub use button::Button;
 pub use color_view::ColorView;
@@ -113,4 +115,6 @@ pub use split::{Column, ColumnWidth, SplitViewController};
 pub use text_field::{SecureField, TextField};
 pub use toolbar::{HostedItem, HostedSearch, ToolbarChild, ToolbarContent, WindowToolbar};
 pub use view_controller::ViewController;
-pub use window::{Window, WindowStyle, is_visible, main_screen_scale, watch_occlusion};
+pub use window::{
+    Window, WindowLevel, WindowStyle, is_visible, main_screen_scale, watch_occlusion,
+};
