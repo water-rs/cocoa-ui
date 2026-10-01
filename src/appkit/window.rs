@@ -22,7 +22,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSAnimatablePropertyContainer, NSAnimationContext, NSAppearance, NSAppearanceCustomization,
     NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBackingStoreType, NSView, NSWindow,
-    NSWindowDelegate, NSWindowStyleMask,
+    NSWindowDelegate, NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString};
 
@@ -368,6 +368,50 @@ impl Window {
             .replace(Some(Rc::new(handler)));
     }
 
+    /// The window's level — where it stacks relative to other applications'
+    /// windows, `NSWindow.level`.
+    #[must_use]
+    pub fn level(&self) -> NSWindowLevel {
+        self.window.level()
+    }
+
+    /// Moves the window to `level`, an `NSWindowLevel` such as
+    /// `NSFloatingWindowLevel` (always on top) or `NSNormalWindowLevel`.
+    pub fn set_level(&self, level: NSWindowLevel) {
+        self.window.setLevel(level);
+    }
+
+    /// Whether the window fills its screen's visible frame — `NSWindow`'s
+    /// user-driven maximize.
+    #[must_use]
+    pub fn is_zoomed(&self) -> bool {
+        self.window.isZoomed()
+    }
+
+    /// Toggles the window's zoom: a zoomed window shrinks back, any other
+    /// fills the screen's visible frame.
+    ///
+    /// `AppKit` ignores the call on a miniaturized or full-screen window, so
+    /// a caller driving window state unwinds those first.
+    pub fn zoom(&self) {
+        self.window.zoom(None);
+    }
+
+    /// The steps the window's content size moves in while the user resizes
+    /// it — `NSWindow.contentResizeIncrements`.
+    pub fn set_content_resize_increments(&self, size: Size) {
+        self.window.setContentResizeIncrements(size.into());
+    }
+
+    /// Calls `handler` after the window becomes key, replacing any handler
+    /// set before.
+    pub fn on_became_key(&self, handler: impl Fn() + 'static) {
+        self.delegate
+            .ivars()
+            .became_key
+            .replace(Some(Rc::new(handler)));
+    }
+
     /// Whether the window is collapsed into the Dock.
     #[must_use]
     pub fn is_miniaturized(&self) -> bool {
@@ -468,6 +512,7 @@ struct DelegateIvars {
     resize: RefCell<Option<Handler>>,
     moved: RefCell<Option<Handler>>,
     live_resize_end: RefCell<Option<Handler>>,
+    became_key: RefCell<Option<Handler>>,
     miniaturized: RefCell<Option<Handler>>,
     deminiaturized: RefCell<Option<Handler>>,
     entered_fullscreen: RefCell<Option<Handler>>,
@@ -523,6 +568,13 @@ define_class!(
         fn window_did_end_live_resize(&self, _notification: &NSNotification) {
             guarded("windowDidEndLiveResize:", || {
                 DelegateIvars::fire(&self.ivars().live_resize_end);
+            });
+        }
+
+        #[unsafe(method(windowDidBecomeKey:))]
+        fn window_did_become_key(&self, _notification: &NSNotification) {
+            guarded("windowDidBecomeKey:", || {
+                DelegateIvars::fire(&self.ivars().became_key);
             });
         }
 

@@ -14,7 +14,9 @@ use std::fmt;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSRequestUserAttentionType,
+};
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
 
 use super::menu::Menu;
@@ -38,6 +40,26 @@ impl ActivationPolicy {
             Self::Regular => NSApplicationActivationPolicy::Regular,
             Self::Accessory => NSApplicationActivationPolicy::Accessory,
             Self::Prohibited => NSApplicationActivationPolicy::Prohibited,
+        }
+    }
+}
+
+/// How urgently an attention request presents itself —
+/// `NSRequestUserAttentionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AttentionRequest {
+    /// A single bounce of the Dock icon — `NSInformationalRequest`.
+    Informational,
+    /// The Dock icon bounces until the request is cancelled or the
+    /// application is focused — `NSCriticalRequest`.
+    Critical,
+}
+
+impl AttentionRequest {
+    const fn native(self) -> NSRequestUserAttentionType {
+        match self {
+            Self::Informational => NSRequestUserAttentionType::InformationalRequest,
+            Self::Critical => NSRequestUserAttentionType::CriticalRequest,
         }
     }
 }
@@ -145,6 +167,22 @@ impl Application {
     /// for every open window.
     pub fn set_windows_menu(&self, menu: &Menu) {
         self.app.setWindowsMenu(Some(menu.native()));
+    }
+
+    /// Asks for the user's attention at `kind`'s urgency — the Dock-icon
+    /// bounce `NSApplication.requestUserAttention` produces — and answers
+    /// the request's token, which [`Self::cancel_user_attention_request`]
+    /// takes to stop it early.
+    #[must_use]
+    pub fn request_user_attention(&self, kind: AttentionRequest) -> isize {
+        self.app.requestUserAttention(kind.native())
+    }
+
+    /// Cancels an outstanding attention request —
+    /// `NSApplication.cancelUserAttentionRequest`, which also stops the Dock
+    /// bounce.
+    pub fn cancel_user_attention_request(&self, request: isize) {
+        self.app.cancelUserAttentionRequest(request);
     }
 
     /// Terminates the application: the equivalent of Quit — the delegate's
