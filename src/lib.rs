@@ -81,6 +81,7 @@ pub mod layer;
 pub mod locale;
 pub mod log;
 pub mod main_queue;
+#[cfg(feature = "map")]
 pub mod map;
 pub mod material;
 pub mod menu;

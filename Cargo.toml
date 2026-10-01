@@ -31,6 +31,11 @@ cargo = "warn"
 undocumented_unsafe_blocks = "warn"
 multiple_crate_versions = { level = "allow", priority = 1 }
 
+[features]
+# The `MapKit` surface (`map` module) carries the `MapKit` framework link
+# through `objc2-map-kit`; opt-in so apps without a map link none of it.
+map = ["dep:objc2-map-kit", "dep:objc2-core-location"]
+
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"
 dispatch2 = { version = "0.3", default-features = false, features = ["std", "objc2"] }
@@ -177,7 +182,7 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = [
 objc2-core-location = { version = "0.3", default-features = false, features = [
     "std",
     "CLLocation",
-] }
+], optional = true }
 objc2-map-kit = { version = "0.3", default-features = false, features = [
     "std",
     "MKAnnotation",
@@ -194,7 +199,7 @@ objc2-map-kit = { version = "0.3", default-features = false, features = [
     "MKTypes",
     "objc2-core-location",
     "block2",
-] }
+], optional = true }
 objc2-av-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "block2",
@@ -235,7 +240,7 @@ bitflags = "2"
 mach2 = "0.7"
 # `MKMapView` and `MKOverlayLevel` are `AppKit`-side types in
 # `objc2-map-kit`; `UIKit` gets a hand-declared binding in `map.rs`.
-objc2-map-kit = { version = "0.3", features = ["objc2-app-kit"] }
+objc2-map-kit = { version = "0.3", features = ["objc2-app-kit"], optional = true }
 objc2-av-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-app-kit",
