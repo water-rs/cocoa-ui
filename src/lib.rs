@@ -51,23 +51,101 @@
 
 #![cfg(any(target_os = "macos", target_os = "ios"))]
 
+pub mod accessibility;
+pub mod action;
 #[cfg(target_os = "macos")]
 pub mod appkit;
+#[cfg(feature = "avkit")]
+pub mod avkit;
+pub mod badge;
+pub mod bitmap;
 pub mod bundle;
 mod callback;
+pub mod capture;
+pub mod color;
 pub mod color_scheme;
 pub mod core_animation;
+pub mod date;
+pub mod display_link;
+pub mod dynamic_range;
+pub mod focus;
+pub mod font;
 pub mod fonts;
 pub mod geometry;
+pub mod gesture;
+pub mod glass;
+pub mod gradient;
+pub mod image;
+pub mod input;
+pub mod keys;
+pub mod layer;
 pub mod locale;
 pub mod log;
 pub mod main_queue;
+#[cfg(feature = "map")]
+pub mod map;
+pub mod material;
+pub mod menu;
+pub mod metal;
 pub mod notification;
+pub mod path;
+pub mod picker;
+pub mod pointer;
 pub mod process;
+pub mod progress;
+pub mod scroll;
+pub mod shape;
+pub mod slider;
+pub mod system_font;
+#[cfg(test)]
+mod test_harness;
+pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
+pub mod view;
+#[cfg(feature = "webview")]
+pub mod web_kit;
 
+/// The platform's base view class: `NSView` on macOS, `UIView` on iOS.
+///
+/// The two frameworks are never compiled together, so an alias rather than
+/// a trait: code written against `PlatformView` has no `#[cfg]`.
+#[cfg(target_os = "macos")]
+pub type PlatformView = objc2_app_kit::NSView;
+/// The platform's base view class: `NSView` on macOS, `UIView` on iOS.
+///
+/// The two frameworks are never compiled together, so an alias rather than
+/// a trait: code written against `PlatformView` has no `#[cfg]`.
+#[cfg(target_os = "ios")]
+pub type PlatformView = objc2_ui_kit::UIView;
+
+pub use action::ActionTarget;
+pub use color::Rgba;
 pub use color_scheme::ColorScheme;
+pub use font::Font;
 pub use geometry::{EdgeInsets, Point, Rect, Size};
+pub use image::{Image, ScaleMode};
+pub use objc2;
 pub use objc2::MainThreadMarker;
 pub use objc2::rc::Retained;
+/// The framework crate whose types appear in this crate's signatures, so a
+/// consumer never pins it separately.
+#[cfg(target_os = "macos")]
+pub use objc2_app_kit;
+#[cfg(feature = "avkit")]
+pub use objc2_av_foundation;
+#[cfg(all(target_os = "macos", feature = "avkit"))]
+pub use objc2_av_kit;
+pub use objc2_core_foundation;
+pub use objc2_core_graphics;
+#[cfg(feature = "avkit")]
+pub use objc2_core_media;
+pub use objc2_metal;
+pub use objc2_quartz_core;
+#[cfg(feature = "webview")]
+pub use objc2_security;
+#[cfg(target_os = "ios")]
+pub use objc2_ui_kit;
+#[cfg(feature = "webview")]
+pub use objc2_web_kit;
+pub use system_font::{FontMetrics, TextStyle};

@@ -121,14 +121,12 @@ impl Application {
 
     /// Sets how the application presents itself.
     ///
-    /// # Panics
-    ///
-    /// If `AppKit` refuses the policy.
-    pub fn set_activation_policy(&self, policy: ActivationPolicy) {
-        assert!(
-            self.app.setActivationPolicy(policy.native()),
-            "AppKit refused the activation policy {policy:?}"
-        );
+    /// Returns whether `AppKit` accepted the change. The system can refuse
+    /// during early startup even for a well-formed app, so callers treat it
+    /// as best-effort — the bundle's `Info.plist` policy still applies.
+    #[must_use]
+    pub fn set_activation_policy(&self, policy: ActivationPolicy) -> bool {
+        self.app.setActivationPolicy(policy.native())
     }
 
     /// Makes `menu` the menu bar: each of its items is one top-level menu,
@@ -147,6 +145,12 @@ impl Application {
     /// for every open window.
     pub fn set_windows_menu(&self, menu: &Menu) {
         self.app.setWindowsMenu(Some(menu.native()));
+    }
+
+    /// Terminates the application: the equivalent of Quit — the delegate's
+    /// `will_terminate` runs and the process exits.
+    pub fn terminate(&self) {
+        self.app.terminate(None);
     }
 
     /// Runs the application's event loop, calling `handlers` as its events

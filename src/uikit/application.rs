@@ -19,15 +19,15 @@ use std::fmt;
 use std::rc::Rc;
 
 use objc2::rc::{Allocated, Retained};
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{
     ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
 };
 use objc2_foundation::{NSDictionary, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
-    UIApplication, UIApplicationDelegate, UIApplicationLaunchOptionsKey, UIResponder, UIScene,
-    UISceneConnectionOptions, UISceneDelegate, UISceneSession, UIWindow, UIWindowScene,
-    UIWindowSceneDelegate,
+    UIApplication, UIApplicationDelegate, UIApplicationLaunchOptionsKey, UIMainMenuSystem, UIMenu,
+    UIMenuBuilder, UIMenuRoot, UIResponder, UIScene, UISceneConnectionOptions, UISceneDelegate,
+    UISceneSession, UIWindow, UIWindowScene, UIWindowSceneDelegate,
 };
 
 use super::window::Window;
@@ -35,6 +35,7 @@ use crate::callback::guarded;
 
 type LaunchHandler = Box<dyn FnOnce(MainThreadMarker)>;
 type SceneHandler = Rc<dyn Fn(&WindowScene) -> Window>;
+type MenuHandler = Rc<dyn Fn(&MenuBuilder<'_>)>;
 
 thread_local! {
     /// The handlers [`run`] hands to the application delegate `UIKit`
@@ -47,6 +48,7 @@ thread_local! {
 pub struct ApplicationHandlers {
     did_finish_launching: Option<LaunchHandler>,
     connect_scene: SceneHandler,
+    build_menus: Option<MenuHandler>,
 }
 
 impl ApplicationHandlers {
@@ -58,6 +60,7 @@ impl ApplicationHandlers {
         Self {
             did_finish_launching: None,
             connect_scene: Rc::new(connect_scene),
+            build_menus: None,
         }
     }
 
@@ -70,6 +73,59 @@ impl ApplicationHandlers {
         self.did_finish_launching = Some(Box::new(handler));
         self
     }
+
+    /// Runs `handler` each time `UIKit` rebuilds the application's menus —
+    /// `application:buildMenuWith:` — handing it the builder under edit.
+    /// `UIKit` calls it before `did_finish_launching` finishes its first turn,
+    /// so the handler must cope with content that only later fills in; a
+    /// [`request_main_menu_rebuild`] then asks for another pass.
+    pub fn build_menus(mut self, handler: impl Fn(&MenuBuilder<'_>) + 'static) -> Self {
+        self.build_menus = Some(Rc::new(handler));
+        self
+    }
+}
+
+/// The `UIMenuBuilder` `build_menus` runs against, restricted to the two
+/// operations an application menu bar needs.
+pub struct MenuBuilder<'a> {
+    builder: &'a ProtocolObject<dyn UIMenuBuilder>,
+}
+
+impl fmt::Debug for MenuBuilder<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MenuBuilder").finish_non_exhaustive()
+    }
+}
+
+impl MenuBuilder<'_> {
+    /// Whether a menu identified `identifier` already exists.
+    #[must_use]
+    pub fn contains(&self, identifier: &str) -> bool {
+        self.builder
+            .menuForIdentifier(&NSString::from_str(identifier))
+            .is_some()
+    }
+
+    /// Appends `menu` at the end of the root menu bar.
+    pub fn insert_at_root_end(&self, menu: &UIMenu) {
+        // SAFETY: `UIMenuRoot` is a constant `NSString` UIKit publishes.
+        let root = unsafe { UIMenuRoot };
+        self.builder
+            .insertChildMenu_atEndOfMenuForIdentifier(menu, root);
+    }
+
+    /// Replaces the menu `identifier` names with `menu`.
+    pub fn replace(&self, identifier: &str, menu: &UIMenu) {
+        self.builder
+            .replaceMenuForIdentifier_withMenu(&NSString::from_str(identifier), menu);
+    }
+}
+
+/// Flags the main menu system for rebuild — the `build_menus` handler
+/// fires on the next pass.
+pub fn request_main_menu_rebuild(mtm: MainThreadMarker) {
+    // SAFETY: the main system exists for the life of the application.
+    unsafe { UIMainMenuSystem::mainSystem(mtm) }.setNeedsRebuild();
 }
 
 impl fmt::Debug for ApplicationHandlers {
@@ -121,6 +177,7 @@ impl WindowScene {
 struct AppDelegateIvars {
     did_finish_launching: Cell<Option<LaunchHandler>>,
     connect_scene: SceneHandler,
+    build_menus: Option<MenuHandler>,
 }
 
 define_class!(
@@ -143,6 +200,7 @@ define_class!(
                 let this = this.set_ivars(AppDelegateIvars {
                     did_finish_launching: Cell::new(handlers.did_finish_launching),
                     connect_scene: handlers.connect_scene,
+                    build_menus: handlers.build_menus,
                 });
                 // SAFETY: `init` is `UIResponder`'s designated initializer.
                 unsafe { msg_send![super(this), init] }
@@ -167,6 +225,26 @@ define_class!(
                 }
                 true
             })
+        }
+    }
+
+    impl AppDelegate {
+        // Registered outside the protocol impl: `application:buildMenuWith:`
+        // exists in `UIApplicationDelegate` only on Mac Catalyst, and the
+        // debug protocol check rejects methods the generated trait does not
+        // list.
+        // SAFETY: see the module safety note.
+        #[unsafe(method(application:buildMenuWith:))]
+        fn application_build_menu(
+            &self,
+            _application: &UIApplication,
+            builder: &ProtocolObject<dyn UIMenuBuilder>,
+        ) {
+            guarded("application:buildMenuWith:", || {
+                if let Some(handler) = &self.ivars().build_menus {
+                    handler(&MenuBuilder { builder });
+                }
+            });
         }
     }
 );

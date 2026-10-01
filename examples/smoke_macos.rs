@@ -12,7 +12,10 @@ use cocoa_ui::{MainThreadMarker, Rect};
 fn main() {
     let mtm = MainThreadMarker::new().expect("main runs on the main thread");
     let app = Application::shared(mtm);
-    app.set_activation_policy(ActivationPolicy::Accessory);
+    assert!(
+        app.set_activation_policy(ActivationPolicy::Accessory),
+        "activation policy switch was refused"
+    );
     app.run(ApplicationHandlers::new().did_finish_launching(|mtm| {
         println!("smoke-macos: launched");
         let window = Window::new(
