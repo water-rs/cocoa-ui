@@ -55,6 +55,7 @@ pub mod accessibility;
 pub mod action;
 #[cfg(target_os = "macos")]
 pub mod appkit;
+#[cfg(feature = "avkit")]
 pub mod avkit;
 pub mod badge;
 pub mod bitmap;
@@ -102,6 +103,7 @@ pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
 pub mod view;
+#[cfg(feature = "webview")]
 pub mod web_kit;
 
 /// The platform's base view class: `NSView` on macOS, `UIView` on iOS.
@@ -130,16 +132,20 @@ pub use objc2::rc::Retained;
 /// consumer never pins it separately.
 #[cfg(target_os = "macos")]
 pub use objc2_app_kit;
+#[cfg(feature = "avkit")]
 pub use objc2_av_foundation;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "avkit"))]
 pub use objc2_av_kit;
 pub use objc2_core_foundation;
 pub use objc2_core_graphics;
+#[cfg(feature = "avkit")]
 pub use objc2_core_media;
 pub use objc2_metal;
 pub use objc2_quartz_core;
+#[cfg(feature = "webview")]
 pub use objc2_security;
 #[cfg(target_os = "ios")]
 pub use objc2_ui_kit;
+#[cfg(feature = "webview")]
 pub use objc2_web_kit;
 pub use system_font::{FontMetrics, TextStyle};

@@ -35,6 +35,14 @@ multiple_crate_versions = { level = "allow", priority = 1 }
 # The `MapKit` surface (`map` module) carries the `MapKit` framework link
 # through `objc2-map-kit`; opt-in so apps without a map link none of it.
 map = ["dep:objc2-map-kit", "dep:objc2-core-location"]
+# The `AVFoundation`/`AVKit` surface (`avkit` module) carries the media
+# framework links through the `objc2-av-*` family; opt-in so apps without
+# media playback compile and link none of it. `objc2-av-kit` only exists on
+# `macOS` (`AVPlayerView`), where `avkit.rs` uses it.
+avkit = ["dep:objc2-av-foundation", "dep:objc2-core-media", "dep:objc2-av-kit"]
+# The `WebKit` surface (`web_kit` module) carries the `WebKit` and `Security`
+# framework links; opt-in so apps without a web view link neither.
+webview = ["dep:objc2-web-kit", "dep:objc2-security"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"
@@ -117,7 +125,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 objc2-security = { version = "0.3", default-features = false, features = [
     "SecTrust",
     "objc2",
-] }
+], optional = true }
 objc2-web-kit = { version = "0.3", default-features = false, features = [
     "block2",
     "WKContentWorld",
@@ -138,7 +146,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
     "WKWebViewConfiguration",
     "WKWebsiteDataStore",
     "WKWindowFeatures",
-] }
+], optional = true }
 objc2-metal = { version = "0.3", default-features = false, features = [
     "std",
     "MTLCommandBuffer",
@@ -219,12 +227,12 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
     "AVPlayerItem",
     "AVPlayerLayer",
     "AVTime",
-] }
+], optional = true }
 objc2-core-media = { version = "0.3", default-features = false, features = [
     "std",
     "CMTime",
     "CMTimeRange",
-] }
+], optional = true }
 kurbo = { version = "0.12" }
 wgpu = { version = "29", default-features = false }
 wgpu-hal = { version = "29", default-features = false, features = [
@@ -246,7 +254,7 @@ objc2-av-kit = { version = "0.3", default-features = false, features = [
     "objc2-app-kit",
     "objc2-av-foundation",
     "AVPlayerView",
-] }
+], optional = true }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-foundation",
