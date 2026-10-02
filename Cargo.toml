@@ -234,14 +234,28 @@ objc2-core-media = { version = "0.3", default-features = false, features = [
     "CMTimeRange",
 ], optional = true }
 kurbo = { version = "0.12" }
-wgpu = { version = "29", default-features = false }
-wgpu-hal = { version = "29", default-features = false, features = [
+wgpu = { version = "30.0.1", default-features = false }
+wgpu-hal = { version = "30.0.1", default-features = false, features = [
     "metal",
 ] }
 # `os_log` is a family of C macros; this crate compiles the one-line wrapper
 # that forwards a preformatted `%{public}s` message through them.
 oslog = { version = "0.2", default-features = false }
 tracing = "0.1"
+
+[patch.crates-io]
+# wgpu 30.0.1 needs the Metal color-space backport used by the framework.
+naga = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+naga-types = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-core = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-core-deps-apple = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-core-deps-emscripten = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-core-deps-wasm = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-core-deps-windows-linux-android = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-hal = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-naga-bridge = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
+wgpu-types = { git = "https://github.com/water-rs/wgpu", rev = "4b35d8bc968f6968b3cbae65b6e2e2ee132aa038" }
 
 [dev-dependencies]
 libtest-mimic = "0.8"

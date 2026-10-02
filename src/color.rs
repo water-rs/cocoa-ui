@@ -35,33 +35,53 @@ impl Rgba {
     }
 }
 
-/// A `CGColor` in the extended linear sRGB space, `headroom` scaling the
-/// color channels by `1.0 + headroom` — the `ResolvedColor` conversion both
-/// platforms share.
-///
-/// # Panics
-///
-/// When `headroom` is NaN — the channel scale becomes NaN and the color
-/// creation traps in Core Graphics.
-#[must_use]
-pub fn cg_extended_linear(
+/// Builds a four-component RGB `CGColor` in a known RGB space.
+fn cg_rgb(
+    space: Option<&objc2_core_graphics::CGColorSpace>,
     red: f64,
     green: f64,
     blue: f64,
     alpha: f64,
-    headroom: f64,
 ) -> objc2_core_foundation::CFRetained<objc2_core_graphics::CGColor> {
-    use objc2_core_graphics::{CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
-    let scale = 1.0 + headroom;
-    let components = [
-        red * scale,
-        green * scale,
-        blue * scale,
-        alpha.clamp(0.0, 1.0),
-    ];
+    use objc2_core_graphics::CGColor;
+    let components = [red, green, blue, alpha.clamp(0.0, 1.0)];
+    // SAFETY: callers pass one of the typed RGB spaces below, each of which
+    // takes exactly four components.
+    unsafe { CGColor::new(space, components.as_ptr()) }
+        .expect("the typed RGB color space and four components always make a color")
+}
+
+/// A `CGColor` in the extended linear sRGB space. Channels pass through straight:
+/// values above `1.0` are the HDR headroom already encoded in the color.
+///
+/// # Panics
+///
+/// Never in practice: extended sRGB and four components always make a
+/// color; the `expect` only covers a platform that does not.
+#[must_use]
+pub fn cg_extended_linear_srgb(
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) -> objc2_core_foundation::CFRetained<objc2_core_graphics::CGColor> {
+    use objc2_core_graphics::{CGColorSpace, kCGColorSpaceExtendedLinearSRGB};
     // SAFETY: the static is a `CFString` constant exported by Core Graphics.
     let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearSRGB }));
-    // SAFETY: `components` points at four f64s, the count extended sRGB takes.
-    unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
-        .expect("extended sRGB and four components always make a color")
+    cg_rgb(space.as_deref(), red, green, blue, alpha)
+}
+
+/// A `CGColor` in the extended linear Display-P3 space. Channels pass
+/// through straight, including values above `1.0`.
+#[must_use]
+pub fn cg_extended_linear_display_p3(
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) -> objc2_core_foundation::CFRetained<objc2_core_graphics::CGColor> {
+    use objc2_core_graphics::{CGColorSpace, kCGColorSpaceExtendedLinearDisplayP3};
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearDisplayP3 }));
+    cg_rgb(space.as_deref(), red, green, blue, alpha)
 }

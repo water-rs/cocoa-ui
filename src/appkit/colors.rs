@@ -18,7 +18,8 @@ use objc2_app_kit::{
     NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSColor, NSColorSpace,
 };
 use objc2_core_graphics::{
-    CGColor, CGColorSpace, kCGColorSpaceExtendedLinearSRGB, kCGColorSpaceLinearSRGB,
+    CGColor, CGColorSpace, kCGColorSpaceExtendedLinearDisplayP3, kCGColorSpaceExtendedLinearSRGB,
+    kCGColorSpaceLinearSRGB,
 };
 
 use crate::color::Rgba;
@@ -70,26 +71,59 @@ fn native(color: AppColor) -> Retained<NSColor> {
     }
 }
 
-/// A color in the extended linear sRGB space: `red`, `green` and `blue` are
-/// sRGB components, `alpha` passes through clamped to `0.0…1.0`.
-///
-/// For HDR content, multiply the components by `1.0 + headroom` yourself and
-/// follow up with [`with_content_headroom`] so `AppKit` draws the extended
-/// range.
+/// A color in the extended linear sRGB space. Channels pass through straight,
+/// including values above `1.0` for HDR content; alpha clamps to `0.0…1.0`.
 ///
 /// # Panics
 ///
 /// Never in practice: extended sRGB and four components always make a color,
 /// and the `expect`s only cover a platform that does not.
 #[must_use]
-pub fn extended_linear(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<NSColor> {
+pub fn extended_linear_srgb(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<NSColor> {
+    extended_linear(
+        // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+        unsafe { kCGColorSpaceExtendedLinearSRGB },
+        red,
+        green,
+        blue,
+        alpha,
+    )
+}
+
+/// A color in extended linear Display-P3, with HDR carried directly in the
+/// RGB channels and straight alpha.
+#[must_use]
+pub fn extended_linear_display_p3(
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) -> Retained<NSColor> {
+    extended_linear(
+        // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+        unsafe { kCGColorSpaceExtendedLinearDisplayP3 },
+        red,
+        green,
+        blue,
+        alpha,
+    )
+}
+
+fn extended_linear(
+    space_name: &'static objc2_core_foundation::CFString,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) -> Retained<NSColor> {
     let components = [red, green, blue, alpha.clamp(0.0, 1.0)];
     // SAFETY: the static is a `CFString` constant exported by Core Graphics.
-    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceExtendedLinearSRGB }));
-    // SAFETY: `components` points at four f64s, the count extended sRGB takes.
+    let space = CGColorSpace::with_name(Some(space_name));
+    // SAFETY: `components` points at four f64s, the count of either typed RGB
+    // space above.
     let cg = unsafe { CGColor::new(space.as_deref(), components.as_ptr()) }
-        .expect("extended sRGB and four components always make a color");
-    NSColor::colorWithCGColor(&cg).expect("every extended-sRGB CGColor becomes an NSColor")
+        .expect("the typed RGB color space and four components always make a color");
+    NSColor::colorWithCGColor(&cg).expect("every typed RGB CGColor becomes an NSColor")
 }
 
 /// The dynamic color placeholder text draws in — the same color
@@ -102,7 +136,7 @@ pub fn placeholder_text() -> Retained<NSColor> {
 
 /// A color in the linear sRGB space: `red`, `green` and `blue` are sRGB
 /// components, clamped to `0.0…1.0` — the SDR-only counterpart of
-/// [`extended_linear`].
+/// [`extended_linear_srgb`].
 ///
 /// # Panics
 ///
