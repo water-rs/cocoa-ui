@@ -80,7 +80,10 @@ pub fn wgpu_to_metal_format(format: wgpu::TextureFormat) -> MTLPixelFormat {
 /// the union of its permitted usages. All prior writes must have completed
 /// before wgpu accesses it, and foreign access must be synchronized with wgpu.
 #[must_use]
-#[expect(clippy::too_many_arguments, reason = "the imported texture descriptor and explicit foreign handoff state form one unsafe boundary")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the imported texture descriptor and explicit foreign handoff state form one unsafe boundary"
+)]
 pub unsafe fn import_texture(
     device: &wgpu::Device,
     texture: Retained<ProtocolObject<dyn MTLTexture>>,
