@@ -1,0 +1,6 @@
+# `cargo test --target aarch64-apple-ios-sim` and `cargo nextest run
+# --target aarch64-apple-ios-sim` hand each built test binary to this
+# runner, which executes it inside a booted iOS Simulator — a
+# cross-compiled artifact is never the test.
+[target.aarch64-apple-ios-sim]
+runner = [".github/scripts/nextest-ios-sim.sh"]

@@ -243,6 +243,19 @@ wgpu-hal = { version = "29", default-features = false, features = [
 oslog = { version = "0.2", default-features = false }
 tracing = "0.1"
 
+[dev-dependencies]
+libtest-mimic = "0.8"
+
+# The `native` suite (tests/native/main.rs) holds the cases that touch real
+# `AppKit`/`UIKit` objects. `harness = false` makes `main` the process's real
+# main thread — `MainThreadMarker::new()` is a genuine check there, with no
+# forged marker or serialization lock — and under nextest each case is its
+# own process. Cases that need no platform objects stay `#[test]` unit tests.
+[[test]]
+name = "native"
+path = "tests/native/main.rs"
+harness = false
+
 [target.'cfg(target_os = "macos")'.dependencies]
 bitflags = "2"
 mach2 = "0.7"

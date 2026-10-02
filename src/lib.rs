@@ -97,8 +97,6 @@ pub mod scroll;
 pub mod shape;
 pub mod slider;
 pub mod system_font;
-#[cfg(test)]
-mod test_harness;
 pub mod text;
 #[cfg(target_os = "ios")]
 pub mod uikit;
@@ -140,6 +138,7 @@ pub use objc2_core_foundation;
 pub use objc2_core_graphics;
 #[cfg(feature = "avkit")]
 pub use objc2_core_media;
+pub use objc2_foundation;
 pub use objc2_metal;
 pub use objc2_quartz_core;
 #[cfg(feature = "webview")]

@@ -315,22 +315,3 @@ impl Label {
         crate::view::invalidate_layout(self);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // The `labelWithString:` factory allocs through `self` without running
-    // `set_ivars`: `setFrameSize:` — delivered during the factory's own
-    // layout — must not trip the debug initialized-ivars check, and every
-    // later `ivars()` access must see the marked flag.
-    #[test]
-    fn a_factory_label_survives_debug_ivar_checks() {
-        crate::test_harness::run(|mtm| {
-            let label = Label::label_with_string(mtm, "hello");
-            label.set_text("world");
-            assert!(label.source_text().is_some());
-            label.set_line_limit(1);
-        });
-    }
-}

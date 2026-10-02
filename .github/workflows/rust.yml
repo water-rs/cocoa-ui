@@ -41,5 +41,57 @@ jobs:
         run: cargo clippy --all-targets --locked --target aarch64-apple-ios -- -D warnings
       - name: Clippy (iOS simulator)
         run: cargo clippy --all-targets --locked --target aarch64-apple-ios-sim -- -D warnings
-      - name: Test
-        run: cargo test -p cocoa-ui --locked
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      # nextest runs every case — libtest units and the native suite alike —
+      # in its own process; the native binary then runs its case on that
+      # process's real main thread.
+      - name: Test (macOS)
+        run: cargo nextest run -p cocoa-ui --locked
+      - name: Doctests
+        run: cargo test -p cocoa-ui --locked --doc
+      # The same suite natively on the iOS simulator: every test binary is
+      # handed to the `aarch64-apple-ios-sim` target runner
+      # (`.cargo/config.toml` → `.github/scripts/nextest-ios-sim.sh`), which
+      # spawns it inside a simulator this job created and owns — so each
+      # native case keeps nextest's one-process-per-case isolation, and no
+      # other job's UIKit state leaks in. Deleting the device afterwards is
+      # unconditional cleanup, not part of the verdict.
+      - name: Create the iOS test simulator
+        id: ios-sim
+        run: |
+          runtime="$(xcrun simctl list runtimes --json \
+            | jq -er '[.runtimes[] | select(.isAvailable and (.identifier | contains("SimRuntime.iOS")))]
+              | last | .identifier')"
+          echo "runtime: $runtime"
+          # productFamily "iPhone" includes iPod touch, which the newest
+          # runtime can reject — try real iPhone types newest-first.
+          udid=""
+          for device_type in $(xcrun simctl list devicetypes --json \
+              | jq -r '[.devicetypes[] | select(.productFamily == "iPhone"
+                  and (.identifier | contains("SimDeviceType.iPhone-")))]
+                | .[].identifier'); do
+            if udid="$(xcrun simctl create cocoa-ui-ci-tests "$device_type" "$runtime" 2>/dev/null)"; then
+              echo "device type: $device_type"
+              break
+            fi
+          done
+          [[ -n "$udid" ]] || { echo "no iPhone device type accepts $runtime" >&2; exit 1; }
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Test (iOS simulator)
+        env:
+          COCOA_UI_IOS_SIM_UDID: ${{ steps.ios-sim.outputs.udid }}
+        run: |
+          xcrun simctl boot "$COCOA_UI_IOS_SIM_UDID"
+          xcrun simctl bootstatus "$COCOA_UI_IOS_SIM_UDID" -b
+          cargo nextest run -p cocoa-ui --locked --target aarch64-apple-ios-sim
+      - name: Delete the iOS test simulator
+        if: always()
+        run: |
+          udid="${{ steps.ios-sim.outputs.udid }}"
+          if [[ -n "$udid" ]]; then
+            xcrun simctl shutdown "$udid" 2>/dev/null || true
+            xcrun simctl delete "$udid"
+          fi
