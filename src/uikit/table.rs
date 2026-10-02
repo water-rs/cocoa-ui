@@ -38,7 +38,7 @@ use objc2::runtime::ProtocolObject;
 use objc2::{
     ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
 };
-use objc2_core_foundation::{CGFloat, CGRect, CGSize};
+use objc2_core_foundation::{CGFloat, CGRect};
 use objc2_foundation::{NSArray, NSIndexPath, NSInteger, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
     NSDirectionalEdgeInsets, NSIndexPathUIKitAdditions, NSLayoutConstraint,
@@ -479,12 +479,13 @@ impl TableView {
     }
 
     /// The default height a stock `UITableViewCell` reports — the minimum a
-    /// row takes when `min_row_height` is unset.
+    /// row takes when `min_row_height` is unset, measured the way a live
+    /// table's self-sizing pass measures it: `sizeThatFits` on a detached
+    /// cell reports a point less than `systemLayoutSizeFittingSize`, the
+    /// measurement `UITableView` actually applies.
     #[must_use]
     pub fn stock_row_height(&self) -> f64 {
-        TableCell::new(self.mtm())
-            .sizeThatFits(CGSize::new(1000.0, 1000.0))
-            .height
+        crate::view::fitting_size(&TableCell::new(self.mtm())).height
     }
 
     /// The table's directional layout margins.
