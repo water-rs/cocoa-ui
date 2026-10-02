@@ -76,6 +76,9 @@ pub fn wgpu_to_metal_format(format: wgpu::TextureFormat) -> MTLPixelFormat {
 /// device produced `texture` — in practice the one `texture.device` reports.
 /// The HAL description `format`, `width` and `height` build must match the
 /// real texture: pass them as read off it.
+/// `initial_state` must describe the texture's actual state at handoff, not
+/// the union of its permitted usages. All prior writes must have completed
+/// before wgpu accesses it, and foreign access must be synchronized with wgpu.
 #[must_use]
 pub unsafe fn import_texture(
     device: &wgpu::Device,
@@ -84,6 +87,7 @@ pub unsafe fn import_texture(
     width: u32,
     height: u32,
     usage: wgpu::TextureUsages,
+    initial_state: wgpu::TextureUses,
     label: &str,
 ) -> wgpu::Texture {
     // SAFETY: `texture` is the retained Metal texture the caller handed in,
@@ -100,6 +104,7 @@ pub unsafe fn import_texture(
                 height,
                 depth: 1,
             },
+            None,
         )
     };
     let descriptor = wgpu::TextureDescriptor {
@@ -117,8 +122,14 @@ pub unsafe fn import_texture(
         view_formats: &[],
     };
     // SAFETY: the HAL texture above came from the same Metal device `device`
-    // wraps, per this function's contract.
-    unsafe { device.create_texture_from_hal::<wgpu_hal::api::Metal>(hal_texture, &descriptor) }
+    // wraps, and the caller supplies its synchronized handoff state.
+    unsafe {
+        device.create_texture_from_hal::<wgpu_hal::api::Metal>(
+            hal_texture,
+            &descriptor,
+            initial_state,
+        )
+    }
 }
 
 /// The `IOSurface` pixel format and bytes per element matching a Metal

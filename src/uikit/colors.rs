@@ -75,6 +75,7 @@ fn native(color: UiColor) -> Retained<UIColor> {
 #[must_use]
 pub fn extended_linear_srgb(red: f64, green: f64, blue: f64, alpha: f64) -> Retained<UIColor> {
     extended_linear(
+        // SAFETY: the static is a `CFString` constant exported by Core Graphics.
         unsafe { kCGColorSpaceExtendedLinearSRGB },
         red,
         green,
@@ -83,8 +84,8 @@ pub fn extended_linear_srgb(red: f64, green: f64, blue: f64, alpha: f64) -> Reta
     )
 }
 
-/// A color in the extended linear Display-P3 space. WorkingColor values use
-/// this gamut and carry HDR directly in their channels.
+/// A color in extended linear Display-P3, with HDR carried directly in the
+/// RGB channels and straight alpha.
 #[must_use]
 pub fn extended_linear_display_p3(
     red: f64,
@@ -93,6 +94,7 @@ pub fn extended_linear_display_p3(
     alpha: f64,
 ) -> Retained<UIColor> {
     extended_linear(
+        // SAFETY: the static is a `CFString` constant exported by Core Graphics.
         unsafe { kCGColorSpaceExtendedLinearDisplayP3 },
         red,
         green,

@@ -28,6 +28,10 @@ pub fn trials() -> Vec<Trial> {
     }
     crate::harness::trials(vec![
         case!(
+            "appkit::colors",
+            extended_linear_display_p3_preserves_space_and_hdr_channels
+        ),
+        case!(
             "appkit::host_view",
             a_child_invalidation_inside_layout_does_not_reenter_the_pass
         ),
@@ -54,6 +58,29 @@ pub fn trials() -> Vec<Trial> {
             the_wrapper_forwards_title_level_size_and_content
         ),
     ])
+}
+
+/// The extended linear Display-P3 constructor must land in that space —
+/// not extended linear sRGB — and pass HDR channels straight through
+/// instead of clamping or baking headroom away.
+fn extended_linear_display_p3_preserves_space_and_hdr_channels() {
+    use cocoa_ui::appkit::colors;
+    use cocoa_ui::objc2_core_graphics::{
+        CGColor, CGColorSpace, kCGColorSpaceExtendedLinearDisplayP3,
+    };
+
+    let color = colors::extended_linear_display_p3(1.5, 0.25, 0.5, 0.8);
+    let cg = color.CGColor();
+    let space = CGColor::color_space(Some(&cg)).expect("an RGB CGColor has a color space");
+    let name = CGColorSpace::name(Some(&space)).expect("a named color space reports its name");
+    // SAFETY: the static is a `CFString` constant exported by Core Graphics.
+    let expected = unsafe { kCGColorSpaceExtendedLinearDisplayP3 }.to_string();
+    assert_eq!(name.to_string(), expected);
+    assert_eq!(CGColor::number_of_components(Some(&cg)), 4);
+    // SAFETY: `components` is valid for `number_of_components` entries.
+    let channels = unsafe { std::slice::from_raw_parts(CGColor::components(Some(&cg)), 4) };
+    assert!((channels[0] - 1.5).abs() < f64::EPSILON);
+    assert!((channels[3] - 0.8).abs() < f64::EPSILON);
 }
 
 /// Regression test for the layout-invalidation loop: a label whose width
