@@ -408,6 +408,146 @@ pub struct RenderedSurface {
     pub texture: Retained<ProtocolObject<dyn MTLTexture>>,
 }
 
+/// Every cache the compositor built on one `MTLDevice`.
+///
+/// The command queue, per-surface textures, composite pipeline and
+/// sampler are all created from `device`, so a device identity change
+/// must replace the whole bundle before any of them is read — the only
+/// path that binds a bundle is
+/// [`CompositorState::device_resources`].
+struct DeviceResources {
+    device: Retained<ProtocolObject<dyn MTLDevice>>,
+    command_queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
+    surface_textures: HashMap<usize, Retained<ProtocolObject<dyn MTLTexture>>>,
+    pipeline: Option<Retained<ProtocolObject<dyn MTLRenderPipelineState>>>,
+    pipeline_format: Option<MTLPixelFormat>,
+    sampler: Option<Retained<ProtocolObject<dyn MTLSamplerState>>>,
+}
+
+impl DeviceResources {
+    /// A fresh bundle bound to `device`.
+    ///
+    /// # Panics
+    ///
+    /// When `device` cannot create a command queue.
+    fn new(device: &ProtocolObject<dyn MTLDevice>) -> Self {
+        Self {
+            device: device.retain(),
+            command_queue: device
+                .newCommandQueue()
+                .expect("failed to create the Metal capture composition command queue"),
+            surface_textures: HashMap::new(),
+            pipeline: None,
+            pipeline_format: None,
+            sampler: None,
+        }
+    }
+
+    /// The private texture for `spec` — reused when id, size and format
+    /// all match.
+    ///
+    /// # Panics
+    ///
+    /// When the device cannot allocate a texture.
+    fn surface_texture(&mut self, spec: SurfaceSpec) -> Retained<ProtocolObject<dyn MTLTexture>> {
+        if let Some(texture) = self.surface_textures.get(&spec.surface_id) {
+            let matches = texture.width() == spec.size.width
+                && texture.height() == spec.size.height
+                && texture.pixelFormat() == spec.pixel_format;
+            if matches {
+                return texture.clone();
+            }
+        }
+        // SAFETY: a 2D texture descriptor is always valid to construct.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                spec.pixel_format,
+                spec.size.width,
+                spec.size.height,
+                false,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::ShaderRead | MTLTextureUsage::RenderTarget);
+        descriptor.setStorageMode(MTLStorageMode::Private);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .expect("failed to create a GPU surface capture texture");
+        self.surface_textures
+            .insert(spec.surface_id, texture.clone());
+        texture
+    }
+
+    /// The pipeline for `format`, compiled once per format.
+    ///
+    /// # Panics
+    ///
+    /// When the in-tree shader fails to compile or lacks its entry points.
+    fn render_pipeline(
+        &mut self,
+        format: MTLPixelFormat,
+    ) -> Retained<ProtocolObject<dyn MTLRenderPipelineState>> {
+        if let Some(pipeline) = &self.pipeline
+            && self.pipeline_format == Some(format)
+        {
+            return pipeline.clone();
+        }
+        let source = NSString::from_str(CAPTURE_COMPOSITE_MSL);
+        let library = self
+            .device
+            .newLibraryWithSource_options_error(&source, None)
+            .expect("failed to compile the capture composite Metal library");
+        let vertex = library
+            .newFunctionWithName(&NSString::from_str("capture_composite_vertex"))
+            .expect("CaptureComposite is missing capture_composite_vertex");
+        let fragment = library
+            .newFunctionWithName(&NSString::from_str("capture_composite_fragment"))
+            .expect("CaptureComposite is missing capture_composite_fragment");
+        let descriptor = MTLRenderPipelineDescriptor::new();
+        descriptor.setVertexFunction(Some(&vertex));
+        descriptor.setFragmentFunction(Some(&fragment));
+        // SAFETY: index 0 is the single color attachment.
+        let attachment = unsafe { descriptor.colorAttachments().objectAtIndexedSubscript(0) };
+        attachment.setPixelFormat(format);
+        attachment.setBlendingEnabled(true);
+        attachment.setRgbBlendOperation(MTLBlendOperation::Add);
+        attachment.setAlphaBlendOperation(MTLBlendOperation::Add);
+        attachment.setSourceRGBBlendFactor(MTLBlendFactor::One);
+        attachment.setDestinationRGBBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
+        attachment.setSourceAlphaBlendFactor(MTLBlendFactor::One);
+        attachment.setDestinationAlphaBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
+        let compiled = self
+            .device
+            .newRenderPipelineStateWithDescriptor_error(&descriptor)
+            .expect("failed to compile the Metal capture composition pipeline");
+        self.pipeline = Some(compiled.clone());
+        self.pipeline_format = Some(format);
+        compiled
+    }
+
+    /// The linear clamp-to-edge sampler.
+    ///
+    /// # Panics
+    ///
+    /// When the device cannot create one.
+    fn composite_sampler(&mut self) -> Retained<ProtocolObject<dyn MTLSamplerState>> {
+        if let Some(sampler) = &self.sampler {
+            return sampler.clone();
+        }
+        let descriptor = MTLSamplerDescriptor::new();
+        descriptor.setMinFilter(MTLSamplerMinMagFilter::Linear);
+        descriptor.setMagFilter(MTLSamplerMinMagFilter::Linear);
+        descriptor.setSAddressMode(MTLSamplerAddressMode::ClampToEdge);
+        descriptor.setTAddressMode(MTLSamplerAddressMode::ClampToEdge);
+        let sampler = self
+            .device
+            .newSamplerStateWithDescriptor(&descriptor)
+            .expect("failed to create the Metal capture composition sampler");
+        self.sampler = Some(sampler.clone());
+        sampler
+    }
+}
+
 /// The compositor's queue-confined state.
 ///
 /// SAFETY: its `Retained` Metal objects are only ever touched from the
@@ -415,14 +555,31 @@ pub struct RenderedSurface {
 /// protocol objects `Send`, so the marker is asserted here.
 struct CompositorState {
     // SAFETY: every `Retained` field is reached only on the serial queue.
-    command_queue: Option<Retained<ProtocolObject<dyn MTLCommandQueue>>>,
-    // SAFETY: see above.
-    surface_textures: HashMap<usize, Retained<ProtocolObject<dyn MTLTexture>>>,
-    // SAFETY: see above.
-    pipeline: Option<Retained<ProtocolObject<dyn MTLRenderPipelineState>>>,
-    pipeline_format: Option<MTLPixelFormat>,
-    // SAFETY: see above.
-    sampler: Option<Retained<ProtocolObject<dyn MTLSamplerState>>>,
+    resources: Option<DeviceResources>,
+}
+
+impl CompositorState {
+    /// The caches bound to `device` — the single bind point every
+    /// device-dependent entry point goes through.
+    ///
+    /// An identity change drops the previous bundle's own strong refs —
+    /// textures already handed to in-flight captures stay alive through
+    /// theirs — and binds a fresh bundle before any cache is read.
+    ///
+    /// # Panics
+    ///
+    /// When `device` cannot create a command queue.
+    fn device_resources(&mut self, device: &ProtocolObject<dyn MTLDevice>) -> &mut DeviceResources {
+        let stale = self.resources.as_ref().is_none_or(|resources| {
+            Retained::as_ptr(&resources.device) != core::ptr::from_ref(device)
+        });
+        if stale {
+            self.resources = Some(DeviceResources::new(device));
+        }
+        self.resources
+            .as_mut()
+            .expect("a device bundle is bound above")
+    }
 }
 
 // SAFETY: the state is only ever reached through `Mutex`, and only on the
@@ -481,13 +638,7 @@ impl Compositor {
                 None,
                 Some(&target),
             ),
-            state: Arc::new(Mutex::new(CompositorState {
-                command_queue: None,
-                surface_textures: HashMap::new(),
-                pipeline: None,
-                pipeline_format: None,
-                sampler: None,
-            })),
+            state: Arc::new(Mutex::new(CompositorState { resources: None })),
         }
     }
 
@@ -508,13 +659,17 @@ impl Compositor {
 
     /// Drops cached per-surface textures once in-flight work drains.
     pub fn discard_resources(&self) {
-        self.perform(|guard| guard.state.surface_textures.clear());
+        self.perform(|guard| {
+            if let Some(resources) = &mut guard.state.resources {
+                resources.surface_textures.clear();
+            }
+        });
     }
 }
 
 impl CompositorGuard<'_> {
-    /// A command buffer from this compositor's queue for `device`; the queue
-    /// is recreated when the device changes.
+    /// A command buffer from the queue bound to `device`; the queue —
+    /// like every cache — is recreated when the device changes.
     ///
     /// # Panics
     ///
@@ -523,22 +678,15 @@ impl CompositorGuard<'_> {
         &mut self,
         device: &ProtocolObject<dyn MTLDevice>,
     ) -> Retained<ProtocolObject<dyn MTLCommandBuffer>> {
-        let stale =
-            self.state.command_queue.as_ref().is_none_or(|queue| {
-                Retained::as_ptr(&queue.device()) != core::ptr::from_ref(device)
-            });
-        if stale {
-            self.state.command_queue = device.newCommandQueue();
-        }
         self.state
+            .device_resources(device)
             .command_queue
-            .as_ref()
-            .and_then(|queue| queue.commandBuffer())
+            .commandBuffer()
             .expect("failed to create the Metal view composition command buffer")
     }
 
     /// The private texture each surface renders into — pruned to `specs`,
-    /// reused across captures.
+    /// reused across captures while the bound device is unchanged.
     ///
     /// # Panics
     ///
@@ -548,51 +696,17 @@ impl CompositorGuard<'_> {
         specs: &[SurfaceSpec],
         device: &ProtocolObject<dyn MTLDevice>,
     ) -> Vec<RenderedSurface> {
-        self.state
+        let resources = self.state.device_resources(device);
+        resources
             .surface_textures
             .retain(|id, _| specs.iter().any(|spec| spec.surface_id == *id));
         specs
             .iter()
             .map(|&spec| RenderedSurface {
                 spec,
-                texture: self.surface_texture(spec, device),
+                texture: resources.surface_texture(spec),
             })
             .collect()
-    }
-
-    /// The private texture for `spec` — reused when id, size and format all
-    /// match.
-    fn surface_texture(
-        &mut self,
-        spec: SurfaceSpec,
-        device: &ProtocolObject<dyn MTLDevice>,
-    ) -> Retained<ProtocolObject<dyn MTLTexture>> {
-        if let Some(texture) = self.state.surface_textures.get(&spec.surface_id) {
-            let matches = texture.width() == spec.size.width
-                && texture.height() == spec.size.height
-                && texture.pixelFormat() == spec.pixel_format;
-            if matches {
-                return texture.clone();
-            }
-        }
-        // SAFETY: a 2D texture descriptor is always valid to construct.
-        let descriptor = unsafe {
-            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-                spec.pixel_format,
-                spec.size.width,
-                spec.size.height,
-                false,
-            )
-        };
-        descriptor.setUsage(MTLTextureUsage::ShaderRead | MTLTextureUsage::RenderTarget);
-        descriptor.setStorageMode(MTLStorageMode::Private);
-        let texture = device
-            .newTextureWithDescriptor(&descriptor)
-            .expect("failed to create a GPU surface capture texture");
-        self.state
-            .surface_textures
-            .insert(spec.surface_id, texture.clone());
-        texture
     }
 
     /// Encodes the composite pass: each surface's texture at its viewport and
@@ -613,6 +727,7 @@ impl CompositorGuard<'_> {
         command_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
         device: &ProtocolObject<dyn MTLDevice>,
     ) {
+        let resources = self.state.device_resources(device);
         let descriptor = MTLRenderPassDescriptor::new();
         // SAFETY: index 0 is the single color attachment.
         let attachment = unsafe { descriptor.colorAttachments().objectAtIndexedSubscript(0) };
@@ -628,8 +743,8 @@ impl CompositorGuard<'_> {
         let encoder = command_buffer
             .renderCommandEncoderWithDescriptor(&descriptor)
             .expect("failed to create the Metal capture composition encoder");
-        encoder.setRenderPipelineState(&self.render_pipeline(device, target.pixelFormat()));
-        let sampler = self.composite_sampler(device);
+        encoder.setRenderPipelineState(&resources.render_pipeline(target.pixelFormat()));
+        let sampler = resources.composite_sampler();
         // SAFETY: `encoder` is a live render encoder and index 0 is the
         // sampler slot the shader binds.
         unsafe {
@@ -681,76 +796,6 @@ impl CompositorGuard<'_> {
         }
         encoder.endEncoding();
     }
-
-    /// The pipeline for `format`, compiled once per format.
-    ///
-    /// # Panics
-    ///
-    /// When the in-tree shader fails to compile or lacks its entry points.
-    fn render_pipeline(
-        &mut self,
-        device: &ProtocolObject<dyn MTLDevice>,
-        format: MTLPixelFormat,
-    ) -> Retained<ProtocolObject<dyn MTLRenderPipelineState>> {
-        if let Some(pipeline) = &self.state.pipeline
-            && self.state.pipeline_format == Some(format)
-        {
-            return pipeline.clone();
-        }
-        let source = NSString::from_str(CAPTURE_COMPOSITE_MSL);
-        let library = device
-            .newLibraryWithSource_options_error(&source, None)
-            .expect("failed to compile the capture composite Metal library");
-        let vertex = library
-            .newFunctionWithName(&NSString::from_str("capture_composite_vertex"))
-            .expect("CaptureComposite is missing capture_composite_vertex");
-        let fragment = library
-            .newFunctionWithName(&NSString::from_str("capture_composite_fragment"))
-            .expect("CaptureComposite is missing capture_composite_fragment");
-        let descriptor = MTLRenderPipelineDescriptor::new();
-        descriptor.setVertexFunction(Some(&vertex));
-        descriptor.setFragmentFunction(Some(&fragment));
-        // SAFETY: index 0 is the single color attachment.
-        let attachment = unsafe { descriptor.colorAttachments().objectAtIndexedSubscript(0) };
-        attachment.setPixelFormat(format);
-        attachment.setBlendingEnabled(true);
-        attachment.setRgbBlendOperation(MTLBlendOperation::Add);
-        attachment.setAlphaBlendOperation(MTLBlendOperation::Add);
-        attachment.setSourceRGBBlendFactor(MTLBlendFactor::One);
-        attachment.setDestinationRGBBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
-        attachment.setSourceAlphaBlendFactor(MTLBlendFactor::One);
-        attachment.setDestinationAlphaBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
-        let compiled = device
-            .newRenderPipelineStateWithDescriptor_error(&descriptor)
-            .expect("failed to compile the Metal capture composition pipeline");
-        self.state.pipeline = Some(compiled.clone());
-        self.state.pipeline_format = Some(format);
-        compiled
-    }
-
-    /// The linear clamp-to-edge sampler.
-    ///
-    /// # Panics
-    ///
-    /// When the device cannot create one.
-    fn composite_sampler(
-        &mut self,
-        device: &ProtocolObject<dyn MTLDevice>,
-    ) -> Retained<ProtocolObject<dyn MTLSamplerState>> {
-        if let Some(sampler) = &self.state.sampler {
-            return sampler.clone();
-        }
-        let descriptor = MTLSamplerDescriptor::new();
-        descriptor.setMinFilter(MTLSamplerMinMagFilter::Linear);
-        descriptor.setMagFilter(MTLSamplerMinMagFilter::Linear);
-        descriptor.setSAddressMode(MTLSamplerAddressMode::ClampToEdge);
-        descriptor.setTAddressMode(MTLSamplerAddressMode::ClampToEdge);
-        let sampler = device
-            .newSamplerStateWithDescriptor(&descriptor)
-            .expect("failed to create the Metal capture composition sampler");
-        self.state.sampler = Some(sampler.clone());
-        sampler
-    }
 }
 
 /// The `CARenderer` half of a capture, confined to the main thread: one
@@ -781,6 +826,7 @@ impl NativeRenderer {
             && overlay.width() == width
             && overlay.height() == height
             && overlay.pixelFormat() == format
+            && Retained::as_ptr(&overlay.device()) == core::ptr::from_ref(device)
         {
             return overlay.clone();
         }
@@ -1363,9 +1409,12 @@ mod tests {
     use objc2_core_foundation::{CFRetained, ConcreteType};
     use objc2_core_graphics::CGColorSpace;
     use objc2_foundation::NSString;
-    use objc2_metal::{MTLCreateSystemDefaultDevice, MTLDevice, MTLPixelFormat};
+    use objc2_metal::{
+        MTLCopyAllDevices, MTLCreateSystemDefaultDevice, MTLDevice, MTLOrigin, MTLPixelFormat,
+        MTLResource, MTLSize, MTLTexture,
+    };
 
-    use super::{CaptureDeferred, FenceBatch, car_renderer_options};
+    use super::{CaptureDeferred, CompositorState, FenceBatch, SurfaceSpec, car_renderer_options};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
@@ -1459,5 +1508,105 @@ mod tests {
         assert_eq!(calls.load(Ordering::Relaxed), 0);
         batch.complete_one(Ok(()));
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+
+    /// The device-bound cache invariant: while the bound `MTLDevice` is
+    /// the same object, every cache survives a rebind; a different device
+    /// swaps the whole bundle — queue, textures, pipeline, sampler —
+    /// before any cache is read. The swap half only runs where the
+    /// machine exposes a second Metal device; a single-GPU runner still
+    /// proves the same-device path never resets spuriously.
+    #[test]
+    fn device_bound_caches_reset_only_on_a_device_change() {
+        let devices = MTLCopyAllDevices();
+        let Some(device) = devices.iter().next() else {
+            return; // No Metal on this runner — nothing to check.
+        };
+        let spec = SurfaceSpec {
+            surface_id: 1,
+            origin: MTLOrigin { x: 0, y: 0, z: 0 },
+            size: MTLSize {
+                width: 8,
+                height: 8,
+                depth: 1,
+            },
+            pixel_format: MTLPixelFormat::BGRA8Unorm,
+        };
+        let mut state = CompositorState { resources: None };
+
+        // Populate every cache on the first device, as a live capture
+        // would: the handed-out texture stands in for a submitted
+        // capture's own strong ref.
+        let texture;
+        let pipeline;
+        let sampler;
+        {
+            let resources = state.device_resources(&device);
+            texture = resources.surface_texture(spec);
+            pipeline = resources.render_pipeline(spec.pixel_format);
+            sampler = resources.composite_sampler();
+        }
+        let queue = Retained::as_ptr(&state.device_resources(&device).command_queue);
+
+        // The same device keeps the whole bundle.
+        {
+            let resources = state.device_resources(&device);
+            assert_eq!(Retained::as_ptr(&resources.command_queue), queue);
+            let cached = resources
+                .surface_textures
+                .get(&spec.surface_id)
+                .expect("the bound texture must survive a same-device rebind");
+            assert_eq!(Retained::as_ptr(cached), Retained::as_ptr(&texture));
+            assert_eq!(
+                Retained::as_ptr(
+                    resources
+                        .pipeline
+                        .as_ref()
+                        .expect("the bound pipeline must survive")
+                ),
+                Retained::as_ptr(&pipeline),
+            );
+            assert_eq!(
+                Retained::as_ptr(
+                    resources
+                        .sampler
+                        .as_ref()
+                        .expect("the bound sampler must survive")
+                ),
+                Retained::as_ptr(&sampler),
+            );
+        }
+
+        // A different device swaps the bundle before any cache is read —
+        // where this runner has a second Metal device.
+        for other in &devices {
+            if Retained::as_ptr(&other) == Retained::as_ptr(&device) {
+                continue;
+            }
+            let resources = state.device_resources(&other);
+            assert_eq!(
+                Retained::as_ptr(&resources.device),
+                Retained::as_ptr(&other)
+            );
+            assert!(resources.surface_textures.is_empty());
+            assert!(resources.pipeline.is_none());
+            assert!(resources.sampler.is_none());
+            let rebound = resources.surface_texture(spec);
+            assert_eq!(
+                Retained::as_ptr(&rebound.device()),
+                Retained::as_ptr(&other),
+                "rebound textures must be created on the new device",
+            );
+
+            // The texture handed out before the swap still owns its
+            // original device — a submitted capture's strong refs
+            // outlive the bundle replacement.
+            assert_eq!(
+                Retained::as_ptr(&texture.device()),
+                Retained::as_ptr(&device),
+                "a handed-out texture keeps its original device across a rebind",
+            );
+            assert_eq!(texture.width(), spec.size.width);
+        }
     }
 }
