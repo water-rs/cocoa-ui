@@ -26,7 +26,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use block2::RcBlock;
@@ -272,6 +272,24 @@ pub fn surface_spec(
     })
 }
 
+/// The signal that a prepared surface frame produced no usable pixels:
+/// its texture must not be sampled.
+///
+/// Reported when the frame was never submitted — a lost context between
+/// preparation and submission — and when an in-flight submission was
+/// lost to device failure. Every fence in the batch still settles, and
+/// nothing composes the missing frame; fatal programming errors still
+/// fail fast rather than reporting through this outcome.
+#[derive(Clone, Copy, Debug)]
+pub struct CaptureDeferred;
+
+/// The callback a surface render request answers with — run on the main
+/// thread, exactly once per accepted request.
+///
+/// `Ok(())` means the frame's texture carries usable pixels;
+/// `Err(CaptureDeferred)` means it produced none.
+pub type SurfaceCaptureCompletion = Box<dyn FnOnce(Result<(), CaptureDeferred>) + Send>;
+
 /// A GPU surface a [`ViewCapture`] can capture.
 ///
 /// Implemented by the backend's surface leaf; every method — and the
@@ -297,13 +315,14 @@ pub trait CapturableSurface {
     /// renderer setup is complete.
     fn prepare_external_render(&self, texture: &ProtocolObject<dyn MTLTexture>) -> bool;
     /// Renders one frame into the prepared `texture` at `width`×`height`
-    /// pixels; `completion` runs on the main thread when the GPU work lands.
+    /// pixels; `completion` reports the frame's outcome on the main
+    /// thread, exactly once.
     fn render_prepared_external_texture(
         &self,
         texture: &ProtocolObject<dyn MTLTexture>,
         width: u32,
         height: u32,
-        completion: Box<dyn FnOnce() + Send>,
+        completion: SurfaceCaptureCompletion,
     );
 }
 
@@ -313,11 +332,13 @@ impl fmt::Debug for dyn CapturableSurface {
     }
 }
 
-/// Counts down surface submissions; `completion` runs when the last lands.
-/// Completed on the main thread.
+/// Counts down surface submissions; `completion` runs when the last one
+/// settles — `Err(CaptureDeferred)` when any fence reported no usable
+/// pixels. Completed on the main thread.
 pub struct FenceBatch {
     remaining: AtomicUsize,
-    completion: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    failed: AtomicBool,
+    completion: Mutex<Option<SurfaceCaptureCompletion>>,
 }
 
 impl fmt::Debug for FenceBatch {
@@ -335,29 +356,45 @@ impl FenceBatch {
     ///
     /// `count` must be non-zero.
     #[must_use]
-    pub fn new(count: usize, completion: impl FnOnce() + Send + 'static) -> Self {
+    pub fn new(
+        count: usize,
+        completion: impl FnOnce(Result<(), CaptureDeferred>) + Send + 'static,
+    ) -> Self {
         assert!(
             count > 0,
             "a GPU fence batch must contain at least one submission"
         );
         Self {
             remaining: AtomicUsize::new(count),
+            failed: AtomicBool::new(false),
             completion: Mutex::new(Some(Box::new(completion))),
         }
     }
 
-    /// One fence landed.
+    /// One fence settled: `Ok` when its frame's pixels are usable,
+    /// `Err(CaptureDeferred)` when the surface never submitted it. Either
+    /// way the batch waits on every outstanding fence — a deferred frame
+    /// never releases the submissions still in flight.
     ///
     /// # Panics
     ///
     /// When more fences land than the batch was built with.
-    pub fn complete_one(&self) {
-        let remaining = self.remaining.fetch_sub(1, Ordering::Relaxed);
+    pub fn complete_one(&self, outcome: Result<(), CaptureDeferred>) {
+        if outcome.is_err() {
+            self.failed.store(true, Ordering::Relaxed);
+        }
+        // The store above is ordered before this release decrement, so the
+        // fence that observes `remaining == 1` sees every reported failure.
+        let remaining = self.remaining.fetch_sub(1, Ordering::AcqRel);
         assert!(remaining > 0, "a GPU fence batch completed more than once");
         if remaining == 1
             && let Some(completion) = self.completion.lock().expect("fence batch lock").take()
         {
-            completion();
+            completion(if self.failed.load(Ordering::Relaxed) {
+                Err(CaptureDeferred)
+            } else {
+                Ok(())
+            });
         }
     }
 }
@@ -1238,7 +1275,12 @@ impl ViewCapture {
             let compositor = self.compositor.clone();
             let rendered = QueueSend(rendered.to_owned());
             let preparation = QueueSend(preparation);
-            move || Self::compose(&compositor, preparation, rendered, completion)
+            move |outcome| match outcome {
+                Ok(()) => Self::compose(&compositor, preparation, rendered, completion),
+                // No usable pixels: the prepared frame drops with the
+                // closure and the capture reports failure.
+                Err(_) => completion(false),
+            }
         }));
         for (item, surface) in rendered.iter().zip(&surfaces) {
             let batch = Arc::clone(&batch);
@@ -1246,7 +1288,7 @@ impl ViewCapture {
                 &item.texture,
                 u32::try_from(item.spec.size.width).expect("a surface is smaller than u32"),
                 u32::try_from(item.spec.size.height).expect("a surface is smaller than u32"),
-                Box::new(move || batch.complete_one()),
+                Box::new(move |outcome| batch.complete_one(outcome)),
             );
         }
     }
@@ -1323,7 +1365,9 @@ mod tests {
     use objc2_foundation::NSString;
     use objc2_metal::{MTLCreateSystemDefaultDevice, MTLDevice, MTLPixelFormat};
 
-    use super::car_renderer_options;
+    use super::{CaptureDeferred, FenceBatch, car_renderer_options};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     // `CFGetTypeID` distinguishes a live Core Foundation object from any
     // serialization of one. Declared here because `objc2-core-foundation`
@@ -1370,5 +1414,50 @@ mod tests {
             CGColorSpace::type_id(),
             "kCARendererColorSpace must carry a CGColorSpace, not a serialization",
         );
+    }
+
+    /// Regression test for the deferred-surface defect: a batch holding
+    /// both submitted and deferred surfaces reports failure — exactly
+    /// once, and only after every fence has settled, so the unrendered
+    /// frame never reaches composition and no in-flight submission's
+    /// resources release early.
+    #[test]
+    fn a_batch_with_a_deferred_surface_fails_once_all_fences_settle() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let outcome = Arc::new(Mutex::new(None));
+        let batch = FenceBatch::new(3, {
+            let calls = Arc::clone(&calls);
+            let outcome = Arc::clone(&outcome);
+            move |result: Result<(), CaptureDeferred>| {
+                calls.fetch_add(1, Ordering::Relaxed);
+                *outcome.lock().expect("outcome lock") = Some(result);
+            }
+        });
+        batch.complete_one(Ok(()));
+        batch.complete_one(Err(CaptureDeferred));
+        // The deferred fence does not end the batch — the third
+        // submission is still in flight.
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        batch.complete_one(Ok(()));
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        let result = outcome.lock().expect("outcome lock").take();
+        assert!(
+            matches!(result, Some(Err(CaptureDeferred))),
+            "a batch with a deferred surface must not report success"
+        );
+
+        // An all-submitted batch still reports success, once.
+        let calls = Arc::new(AtomicUsize::new(0));
+        let batch = FenceBatch::new(2, {
+            let calls = Arc::clone(&calls);
+            move |result: Result<(), CaptureDeferred>| {
+                assert!(result.is_ok());
+                calls.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        batch.complete_one(Ok(()));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        batch.complete_one(Ok(()));
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
 }
